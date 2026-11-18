@@ -112,13 +112,20 @@ struct Timed {
 }
 
 impl Timed {
-    /// Closes the window once the user has agreed to lose unsaved changes.
-    fn close_if_quitting(&mut self, event_loop: &dyn ActiveEventLoop) {
-        let quitting = crate::try_with(|editor| std::mem::take(&mut editor.quitting));
-        if let (Some(true), Some(window)) = (quitting, self.window) {
-            self.inner.window_event(event_loop, window, WindowEvent::CloseRequested);
+    /// Ends the editor once the user has agreed to lose unsaved changes.
+    fn close_if_quitting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        if crate::try_with(|editor| std::mem::take(&mut editor.quitting)) == Some(true) {
+            quit();
         }
     }
+}
+
+/// Ends the process at once. Letting the window close the usual way first took Blitz over
+/// five seconds of tearing down the page, its renderer and the textures, with the window
+/// frozen on screen. None of it needs saving: settings, favourites and recent maps are
+/// written as they change, and the engine hosted in the process goes with it.
+fn quit() -> ! {
+    std::process::exit(0)
 }
 
 impl ApplicationHandler for Timed {
@@ -160,6 +167,7 @@ impl ApplicationHandler for Timed {
                 crate::with(|editor| editor.confirm = Some(Discarding::Quit));
                 crate::bump();
             }
+            WindowEvent::CloseRequested => quit(),
             WindowEvent::RedrawRequested => {
                 let start = Instant::now();
                 // The entity palette's rows follow its list's scroll in this frame: the
