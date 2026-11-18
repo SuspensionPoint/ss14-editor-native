@@ -1,0 +1,149 @@
+# Checks and builds the editor on every pull request into main and every push to it.
+# What each job does, how long it takes and how to download a build: docs/ci.md.
+name: pr
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to a pull request cancels the run of the push before it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  CARGO_TERM_COLOR: always
+  # The system libraries the Rust crates build against on Linux: openssl-sys (libssl),
+  # yeslogic-fontconfig-sys (fontconfig), winit and the file dialogs (X11, xkbcommon, Wayland).
+  LINUX_PACKAGES: pkg-config libssl-dev libfontconfig1-dev libfreetype-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libwayland-dev
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The pinned Starlight commit
+        id: fork
+        run: |
+          echo "sha=$(git rev-parse HEAD:upstream/starlight)" >> "$GITHUB_OUTPUT"
+          echo "url=$(git config -f .gitmodules submodule.upstream/starlight.url)" >> "$GITHUB_OUTPUT"
+
+      - name: Linux packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends $LINUX_PACKAGES
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            native/target
+          key: cargo-${{ runner.os }}-checks-${{ hashFiles('native/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-checks-
+
+      - name: cargo fmt (report only)
+        working-directory: native
+        run: |
+          # The code is not formatted by rustfmt yet. Until it is, this only reports.
+          if cargo fmt --all --check > fmt.txt 2>&1; then
+            echo "formatted"
+          else
+            places=$(grep -c '^Diff in' fmt.txt || true)
+            files=$(grep '^Diff in' fmt.txt | sed 's/:[0-9]*:$//' | sort -u | wc -l)
+            echo "::warning::cargo fmt would change $places places in $files files (report only, docs/ci.md)"
+            echo "cargo fmt would change $places places in $files files" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: cargo clippy (warnings allowed)
+        working-directory: native
+        run: |
+          cargo clippy --workspace --all-targets --message-format=short -- --cap-lints warn 2>&1 | tee clippy.txt
+          warnings=$(grep -c ': warning: ' clippy.txt || true)
+          echo "::notice::cargo clippy: $warnings warnings"
+          echo "cargo clippy: $warnings warnings" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: cargo test -p editor-core
+        working-directory: native
+        run: |
+          # The fork tests make commits in temporary repositories.
+          git config --global user.name ci
+          git config --global user.email ci@localhost
+          cargo test -p editor-core --release
+
+      - name: Starlight's code and engine (sparse, shallow)
+        run: bash tools/ci/fork-checkout.sh "${{ steps.fork.outputs.url }}" "${{ steps.fork.outputs.sha }}" upstream/starlight --code
+
+      - name: Engine patch units
+        run: bash tools/engine-patches.sh apply
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-starlight-${{ steps.fork.outputs.sha }}-${{ hashFiles('Directory.Packages.props', 'src/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-starlight-
+
+      - name: C# build of the engine side
+        run: dotnet build src/Editor.Native -c Release -p:TreatWarningsAsErrors=false -nologo -v:m -clp:NoSummary
+
+  engine-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The pinned Starlight commit
+        id: fork
+        run: |
+          echo "sha=$(git rev-parse HEAD:upstream/starlight)" >> "$GITHUB_OUTPUT"
+          echo "url=$(git config -f .gitmodules submodule.upstream/starlight.url)" >> "$GITHUB_OUTPUT"
+
+      # The checks open the fork's maps with its prototypes, sprites and text: the whole fork.
+      - name: Starlight with its Resources (shallow)
+        run: bash tools/ci/fork-checkout.sh "${{ steps.fork.outputs.url }}" "${{ steps.fork.outputs.sha }}" upstream/starlight --full
+
+      - name: Engine patch units
+        run: bash tools/engine-patches.sh apply
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-starlight-${{ steps.fork.outputs.sha }}-${{ hashFiles('Directory.Packages.props', 'src/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-starlight-
+
+      - name: Publish the engine side
+        run: bash tools/ci/engine-side.sh upstream/starlight linux-x64 src/Editor.Native/bin/r2r --patched
+
+      - name: Pack the prototypes
+        run: |
+          mkdir -p native/cache
+          dotnet src/Editor.Native/bin/r2r/Editor.Native.dll pack upstream/starlight native/cache/kernel-resources.zip
+
+      - name: Editor.Native quick
+        run: dotnet src/Editor.Native/bin/r2r/Editor.Native.dll quick upstream/starlight --cache native/cache/kernel-resources.zip --out native/out/quick
+
+  # The packages for Windows, Linux and macOS (.github/workflows/package.yml), kept 30 days.
+  package:
+    uses: ./.github/workflows/package.yml
+    with:
+      version: ${{ github.event.pull_request.head.sha || github.sha }}
+      retention-days: 30

@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The document kernel: boots a headless SS14 engine from a fork checkout and holds the open
+    maps as live entities, with every edit, undo, redo and save. Editor.Native hosts it.
+  -->
+  <PropertyGroup>
+    <Description>SS14 Map Editor's document kernel: a headless engine that holds the open maps and edits them.</Description>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SS14.EditorKernel</RootNamespace>
+    <!-- This host wraps IReflectionManager, which the content analyzer forbids for game content. -->
+    <SkipRobustAnalyzer>true</SkipRobustAnalyzer>
+    <!-- Built for the engine side's runtime where the test simulation is in Robust.UnitTesting (below). -->
+    <IsRidAgnostic Condition="'$(EngineSimulationInUnitTesting)' == 'true'">false</IsRidAgnostic>
+  </PropertyGroup>
+
+  <Import Project="$(ForkRoot)MSBuild\Content.props" Condition="'$(ForkContentProps)' == 'true'" />
+  <Import Project="$(ForkRoot)RobustToolbox\Imports\Server.props" Condition="'$(EngineImports)' == 'true'" />
+  <Import Project="$(ForkRoot)RobustToolbox\Imports\Shared.props" Condition="'$(EngineImports)' == 'true'" />
+
+  <!-- An engine without Imports (src/Directory.Build.props): its projects themselves. -->
+  <ItemGroup Condition="'$(EngineImports)' != 'true'">
+    <ProjectReference Include="$(EngineRoot)Robust.Server\Robust.Server.csproj" />
+    <ProjectReference Include="$(EngineRoot)Robust.Shared\Robust.Shared.csproj" />
+    <ProjectReference Include="$(EngineRoot)Robust.Shared.Maths\Robust.Shared.Maths.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same mocking library the engine harness uses; the kernel mocks the network manager in the browser. -->
+    <PackageReference Include="Moq" />
+    <!-- The engine's log handler interface exposes Serilog's event type. -->
+    <PackageReference Include="Serilog" />
+    <!-- The test simulation, where the engine keeps it (src/Directory.Build.props). -->
+    <ProjectReference Include="$(EngineSimulationProject)" Condition="'$(EngineSimulationInUnitTesting)' != 'true'" />
+    <!--
+      Robust.UnitTesting is a test project, which the SDK builds for no runtime in particular, and
+      its references, the engine's client and server, would then be built a second time beside
+      the ones built for the runtime the engine side is published for. Built with this project's
+      runtime instead, which this project then has too.
+    -->
+    <ProjectReference Include="$(EngineSimulationProject)" Condition="'$(EngineSimulationInUnitTesting)' == 'true'" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="$(ForkRoot)Content.Shared\Content.Shared.csproj" />
+    <ProjectReference Include="$(ForkRoot)Content.Server\Content.Server.csproj" />
+    <!--
+      A fork's server modules beside Content.Server, as Goob Station's Content.Goobstation.Server,
+      which nothing else refers to: built here, so that they are beside the kernel, which loads
+      them as the game server does (ContentAssemblies in HostingShared.cs). Starlight has none.
+    -->
+    <ProjectReference Include="$(ForkRoot)Content.*.Server\Content.*.Server.csproj" />
+    <!-- The native editor compiles the view kernel next to this one and shares its host helpers. -->
+    <InternalsVisibleTo Include="Editor.Native" />
+  </ItemGroup>
+
+  <Import Project="$(ForkRoot)RobustToolbox\MSBuild\Robust.Properties.targets" />
+
+  <!--
+    The engine only lets content reference it through Imports/*.props, and the sanctioned
+    Testing.props also pulls in the client. This host wants the server-side harness alone,
+    so opt out of that check for this project. Must come after the import above.
+  -->
+  <PropertyGroup>
+    <AllowDirectRobustReferences>true</AllowDirectRobustReferences>
+    <!-- Robust.Server and Content.Server are executables; this host only uses them as libraries. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+</Project>

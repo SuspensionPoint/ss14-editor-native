@@ -1,0 +1,158 @@
+<Project>
+  <!--
+    The fork the engine side is built against: upstream/starlight, unless a build gives another
+    with -p:ForkRoot=<folder>. The editor builds the engine side for other forks that way, in a
+    private copy of the fork in its cache (native/editor-core/src/forks/engines.rs). Every
+    project here refers to the fork and its RobustToolbox through it.
+  -->
+  <PropertyGroup>
+    <ForkRoot Condition="'$(ForkRoot)' == ''">$(MSBuildThisFileDirectory)..\upstream\starlight\</ForkRoot>
+    <ForkRoot>$([MSBuild]::EnsureTrailingSlash('$(ForkRoot)'))</ForkRoot>
+    <EngineRoot>$(ForkRoot)RobustToolbox\</EngineRoot>
+  </PropertyGroup>
+
+  <!-- What every project of the editor says about itself. -->
+  <PropertyGroup>
+    <Product>SS14 Map Editor</Product>
+    <Version>0.1.0</Version>
+    <Authors>SS14 Map Editor contributors</Authors>
+    <Copyright>Copyright (c) SS14 Map Editor contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/SuspensionPoint/ss14-editor-native</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <!--
+    Where the fork and its engine keep what the projects build on, told from their folders.
+
+    EngineSimulationProject: the test simulation the document kernel starts the engine with
+    (RobustServerSimulation), in Robust.Server.Testing, or in Robust.UnitTesting on older engines
+    (264, 268), when EngineSimulationInUnitTesting is set. Its namespace is the same either way,
+    so only the reference differs.
+    EngineImports: the engine's Imports folder, the props content refers to the engine through.
+    Older engines have none, and the projects refer to the engine's projects themselves.
+    ForkContentProps: the fork's MSBuild\Content.props. Older forks have none.
+  -->
+  <PropertyGroup>
+    <EngineSimulationProject>$(EngineRoot)Robust.Server.Testing\Robust.Server.Testing.csproj</EngineSimulationProject>
+    <EngineSimulationInUnitTesting Condition="!Exists('$(EngineSimulationProject)')">true</EngineSimulationInUnitTesting>
+    <EngineSimulationProject Condition="'$(EngineSimulationInUnitTesting)' == 'true'">$(EngineRoot)Robust.UnitTesting\Robust.UnitTesting.csproj</EngineSimulationProject>
+    <EngineImports Condition="Exists('$(EngineRoot)Imports\Shared.props')">true</EngineImports>
+    <ForkContentProps Condition="Exists('$(ForkRoot)MSBuild\Content.props')">true</ForkContentProps>
+  </PropertyGroup>
+
+  <!--
+    Code that only some forks have. The editor's code that uses it compiles only when the fork
+    has it, and the feature is left out on a fork without it. Each switch is told from the
+    fork's own source, and named for what it has, not for a fork. Directory.Build.targets turns
+    them into constants of the same names.
+
+    FORK_PLUMBING: Starlight's plumbing (Content.Server/_Starlight/Plumbing). Without it there is
+    no plumbing look and nothing is on the editor's Plumbing layer.
+
+    FORK_DISPOSAL_EXITS: the disposal tube's component is in Content.Shared with the exits of
+    each kind of tube. Older forks keep it in Content.Server with the exits worked out by each
+    kind's own component. Without it the engine tells no tube's exits, the editor's check of
+    open disposal ends finds nothing, and the view cannot tell tubes from the rest under the
+    floor, so the Disposals layer is empty.
+
+    FORK_ANIMATED_BACKDROPS: a backdrop's layer can be a sprite (ParallaxLayerConfig.Sprite). The
+    editor shows no such layer either way.
+
+    FORK_SERVER_ATMOSPHERE: a grid's atmosphere (TileAtmosphere, GridAtmosphereComponent) is in
+    Content.Server, as Goob Station keeps it. Without it, in Content.Shared.
+    Editor.Kernel/ForkCompat.cs names both for the kernel either way.
+
+    FORK_CLIENT_SERVICES_AT_INIT: the fork's client registers its services in its entry point's
+    Init (ClientContentIoC.Register() with no argument), as older content does, not in PreInit.
+    The view kernel then puts its stand-in for the backdrop in after them by the game's hook for
+    tests, not in its own entry point's PreInit, which comes before them.
+
+    FORK_PREDICTED_POPUPS: the Space Wizards' self-predicting popups, whose shared system has
+    fewer overloads, each with an optional recipient. The kernel's popup system that shows nothing
+    (Editor.Kernel/DeviceLinks.cs) overrides that set, else the older one.
+
+    FORK_DECAL_CHUNK_ENTITIES: the Space Wizards' decals on chunk entities of the grid
+    (DecalChunkComponent), not in the grid's DecalGridComponent. The editor shows none and
+    refuses an edit of one. The chunk entities are loaded and saved as they are.
+
+    FORK_SEALED_DEVICE_LINK_SYSTEM: the Space Wizards' device network refactor, one sealed
+    DeviceLinkSystem in Content.Shared.DeviceLinking.Systems with the components in
+    Content.Shared.DeviceLinking.Components, in place of SharedDeviceLinkSystem. The kernel then
+    makes a link by the system's rules itself (Editor.Kernel/DeviceLinks.cs), as it cannot
+    subclass the game's.
+
+    FORK_LINKED_DEVICE_NETWORK: the same refactor's device lists, DeviceListComponent in
+    Content.Shared.DeviceConfigurator.Components, and the lists a device is on kept in a
+    LinkedDeviceNetworkComponent the network configurator gives it, not in DeviceNetworkComponent.
+    Editor.Kernel/ForkCompat.cs names the device's component either way (ListedDeviceComponent).
+  -->
+  <PropertyGroup>
+    <ForkPlumbing Condition="Exists('$(ForkRoot)Content.Server\_Starlight\Plumbing') And Exists('$(ForkRoot)Content.Shared\_Starlight\Plumbing')">true</ForkPlumbing>
+    <ForkDisposalExits Condition="Exists('$(ForkRoot)Content.Shared\Disposal\Tube\DisposalTubeComponent.cs')">true</ForkDisposalExits>
+    <_File>$(ForkRoot)Content.Client\Parallax\Data\ParallaxLayerConfig.cs</_File>
+    <ForkAnimatedBackdrops Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('public bool Sprite'))">true</ForkAnimatedBackdrops>
+    <ForkServerAtmosphere Condition="Exists('$(ForkRoot)Content.Server\Atmos\TileAtmosphere.cs')">true</ForkServerAtmosphere>
+    <ForkDecalChunkEntities Condition="Exists('$(ForkRoot)Content.Shared\Decals\DecalChunkComponent.cs')">true</ForkDecalChunkEntities>
+    <_File>$(ForkRoot)Content.Shared\Popups\SharedPopupSystem.cs</_File>
+    <ForkPredictedPopups Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('int predictionKey'))">true</ForkPredictedPopups>
+    <_File>$(ForkRoot)Content.Client\Entry\EntryPoint.cs</_File>
+    <ForkClientServicesAtInit Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('ClientContentIoC.Register();'))">true</ForkClientServicesAtInit>
+    <ForkSealedDeviceLinkSystem Condition="Exists('$(ForkRoot)Content.Shared\DeviceLinking\Systems\DeviceLinkSystem.cs') And !Exists('$(ForkRoot)Content.Shared\DeviceLinking\SharedDeviceLinkSystem.cs')">true</ForkSealedDeviceLinkSystem>
+    <ForkLinkedDeviceNetwork Condition="Exists('$(ForkRoot)Content.Shared\DeviceConfigurator\Components\LinkedDeviceNetworkComponent.cs')">true</ForkLinkedDeviceNetwork>
+  </PropertyGroup>
+
+  <!--
+    Where engines differ. Each switch is told from the engine's own source, so a fork on an older
+    or newer engine gets the code its engine fits.
+
+    ENGINE_MAP_SYSTEM_GRIDS: grids are made by SharedMapSystem.CreateGridEntity. Without it, by
+    IMapManager.CreateGridEntity.
+    ENGINE_SERIALIZER_PROVIDER_TAKES_MANAGER: a SerializerProvider is made with its
+    serialization manager. Without it, with nothing.
+    ENGINE_PROTOTYPE_TRYCOMP: EntityPrototype.TryComp. Without it the kernel gives one that calls
+    TryGetComponent (Editor.Kernel/ForkCompat.cs).
+    ENGINE_REFLECTION_ATTRIBUTE_SET, ENGINE_REFLECTION_IS_ATTRIBUTE_DEFINED: the two members of
+    IReflectionManager the kernel's wrapper of it must then pass on.
+    ENGINE_PARTIAL_PROTOTYPES: partial prototypes (IPrototypeManager.PartialDirectory). Without
+    them a fork's PartialPrototypes folder cannot be applied.
+    ENGINE_KEY_TAGS: tags on the keys of a mapping (MappingDataNode._keyTags), which the
+    prototype cache must keep. Without them there are none to keep.
+    ENGINE_DRAW_TEXTURE_RECTS, ENGINE_DRAW_RECTS, ENGINE_SPRITE_POST_SHADERS: drawing calls of
+    DrawingHandleWorld that the view's recorder must then take.
+    ENGINE_PENDING_REMOVAL: EntityManager.IsComponentPendingRemoval, which the save bench skips by
+    as the engine's save does.
+    ENGINE_MAP_LOADER_TEXT: MapLoaderSystem loads and saves a map file as text. Without it, by
+    path alone, and Editor.Kernel/ForkCompat.cs gives the text overloads through a stream and the
+    serialized data.
+    ENGINE_PARALLEL_BULK_JOBS: jobs run in bulk by range (IParallelBulkRobustJob), which the
+    browser's stand-in for the engine's thread pool runs. Without them there is no stand-in, which
+    only a browser build needs, and that is of Starlight's engine alone.
+  -->
+  <PropertyGroup>
+    <_File>$(EngineRoot)Robust.Shared\GameObjects\Systems\SharedMapSystem.Grid.cs</_File>
+    <EngineMapSystemGrids Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('CreateGridEntity'))">true</EngineMapSystemGrids>
+    <_File>$(EngineRoot)Robust.Shared\Serialization\Manager\SerializationManager.SerializerProvider.cs</_File>
+    <EngineSerializerProviderTakesManager Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('ISerializationManager ser'))">true</EngineSerializerProviderTakesManager>
+    <_File>$(EngineRoot)Robust.Shared\Prototypes\EntityPrototype.cs</_File>
+    <EnginePrototypeTryComp Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('public bool TryComp'))">true</EnginePrototypeTryComp>
+    <_File>$(EngineRoot)Robust.Shared\Reflection\IReflectionManager.cs</_File>
+    <EngineReflectionAttributeSet Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('FindTypesWithAttributeSet'))">true</EngineReflectionAttributeSet>
+    <EngineReflectionIsAttributeDefined Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('IsAttributeDefined'))">true</EngineReflectionIsAttributeDefined>
+    <_File>$(EngineRoot)Robust.Shared\Prototypes\IPrototypeManager.cs</_File>
+    <EnginePartialPrototypes Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('PartialDirectory'))">true</EnginePartialPrototypes>
+    <_File>$(EngineRoot)Robust.Shared\Serialization\Markdown\Mapping\MappingDataNode.cs</_File>
+    <EngineKeyTags Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('_keyTags'))">true</EngineKeyTags>
+    <_File>$(EngineRoot)Robust.Client\Graphics\Drawing\DrawingHandleWorld.cs</_File>
+    <EngineDrawTextureRects Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('void DrawTextureRects'))">true</EngineDrawTextureRects>
+    <EngineDrawRects Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('void DrawRects'))">true</EngineDrawRects>
+    <EngineSpritePostShaders Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('void RenderSpritePostShaders'))">true</EngineSpritePostShaders>
+    <_File>$(EngineRoot)Robust.Shared\GameObjects\EntityManager.Components.cs</_File>
+    <EnginePendingRemoval Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('IsComponentPendingRemoval'))">true</EnginePendingRemoval>
+    <_File>$(EngineRoot)Robust.Shared\EntitySerialization\Systems\MapLoaderSystem.Save.cs</_File>
+    <EngineMapLoaderText Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('TextWriter target'))">true</EngineMapLoaderText>
+    <_File>$(EngineRoot)Robust.Shared\Threading\IParallelRobustJob.cs</_File>
+    <EngineParallelBulkJobs Condition="Exists('$(_File)') And $([System.IO.File]::ReadAllText('$(_File)').Contains('IParallelBulkRobustJob'))">true</EngineParallelBulkJobs>
+    <_File></_File>
+  </PropertyGroup>
+</Project>

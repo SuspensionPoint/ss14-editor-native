@@ -1,0 +1,5 @@
+adds: RegisterReflection on the test simulation, so the kernel loads content's assemblies into its reflection
+native: yes
+has: Robust.Server.Testing/RobustServerSimulation.cs RegisterReflection(ReflectionDelegate
+# Older engines (264, 268) keep the test simulation in Robust.UnitTesting: wizden-264.patch.
+has: Robust.UnitTesting/Server/RobustServerSimulation.cs RegisterReflection(ReflectionDelegate

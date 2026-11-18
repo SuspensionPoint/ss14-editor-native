@@ -1,0 +1,3 @@
+adds: a hook that hands the prototype manager documents parsed ahead of time (the prototype cache)
+native: yes
+has: Robust.Shared/Prototypes/PrototypeManager.PreParsed.cs PreParsedDocuments

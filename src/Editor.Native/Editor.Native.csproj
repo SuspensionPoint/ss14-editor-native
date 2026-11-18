@@ -1,0 +1,100 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The engine side of the editor (docs/architecture.md): the
+    document kernel and the view kernel in one process, each on its own thread, with what the
+    document kernel reports handed to the view kernel as objects.
+
+    It is an executable so that it can be measured on its own (`bench`), and it carries the
+    functions a Rust host calls once it has loaded the .NET runtime into its own process
+    (NativeExports.cs).
+
+    Needs engine patches 0003 (use of the client's internal types) and 0004 (sprite sheets
+    without their images). Patch 0002 is needed only to start from a prototype cache.
+  -->
+  <PropertyGroup>
+    <Description>SS14 Map Editor's engine side: the document and view kernels in the editor's process, and the engine checks.</Description>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>SS14.EditorNative</RootNamespace>
+    <AssemblyName>Editor.Native</AssemblyName>
+    <SkipRobustAnalyzer>true</SkipRobustAnalyzer>
+
+    <!--
+      Runtime settings, chosen by measuring. They end up in
+      Editor.Native.runtimeconfig.json, which a native host reads as well.
+
+      Profile-guided tiering instruments code while it warms up. An editor's heavy work comes
+      in bursts of code that has just been loaded (starting, opening a map, saving), and the
+      instrumentation made exactly those about twice as slow.
+
+      The server collector starts both kernels about a quarter faster and opens maps a little
+      faster, for 250 to 750 MB more memory.
+    -->
+    <TieredPGO>false</TieredPGO>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+
+    <!--
+      Forks of the Space Wizards' code carry a server_config.toml in Content.Server as the
+      engine's Robust.Server does, and both land in the published folder. Neither is read here.
+    -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+
+    <!--
+      A fork on an older .NET (RMC-14 is on 9) runs on a newer runtime when its own is not
+      installed, as it is built by a newer SDK then too (forks/engines.rs sdk_check).
+    -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <Import Project="$(ForkRoot)MSBuild\Content.props" Condition="'$(ForkContentProps)' == 'true'" />
+
+  <!-- An engine without Imports (src/Directory.Build.props): its projects themselves. -->
+  <ItemGroup Condition="'$(EngineImports)' != 'true'">
+    <ProjectReference Include="$(EngineRoot)Robust.Client\Robust.Client.csproj" />
+    <ProjectReference Include="$(EngineRoot)Robust.Shared\Robust.Shared.csproj" />
+    <ProjectReference Include="$(EngineRoot)Robust.Shared.Maths\Robust.Shared.Maths.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Moq" />
+    <PackageReference Include="Serilog" />
+    <!-- The document kernel, with the contract and the host helpers both kernels use. -->
+    <ProjectReference Include="..\Editor.Kernel\Editor.Kernel.csproj" />
+    <!--
+      The test simulation where the engine keeps it in Robust.UnitTesting, which this project
+      would otherwise refer to through the document kernel and build for no runtime in
+      particular (Editor.Kernel.csproj).
+    -->
+    <ProjectReference Include="$(EngineSimulationProject)" Condition="'$(EngineSimulationInUnitTesting)' == 'true'" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="$(ForkRoot)Content.Shared\Content.Shared.csproj" />
+    <ProjectReference Include="$(ForkRoot)Content.Client\Content.Client.csproj" />
+    <!--
+      A fork's client modules beside Content.Client, as Goob Station's Content.Goobstation.Client,
+      which nothing else refers to, built so that the view kernel loads them as the game does
+      (ContentAssemblies in Editor.Kernel/HostingShared.cs). Starlight has none.
+    -->
+    <ProjectReference Include="$(ForkRoot)Content.*.Client\Content.*.Client.csproj" />
+
+    <!--
+      The view kernel, compiled in rather than referenced: as its own assembly it carries a
+      second copy of the contract types, and here a scene has to be one type on both sides.
+    -->
+    <Compile Include="..\Editor.ViewKernel\ViewKernel.cs" Link="View\ViewKernel.cs" />
+    <Compile Include="..\Editor.ViewKernel\ViewPack.cs" Link="View\ViewPack.cs" />
+    <Compile Include="..\Content.EditorView\DrawRecorder.cs" Link="View\DrawRecorder.cs" />
+    <Compile Include="..\Content.EditorView\ViewWorld.cs" Link="View\ViewWorld.cs" />
+    <Compile Include="..\Content.EditorView\ViewWorld.DrawList.cs" Link="View\ViewWorld.DrawList.cs" />
+    <Compile Include="..\Content.EditorView\SubFloorView.cs" Link="View\SubFloorView.cs" />
+  </ItemGroup>
+
+  <Import Project="$(ForkRoot)RobustToolbox\MSBuild\Robust.Properties.targets" />
+  <Import Project="$(ForkRoot)RobustToolbox\Imports\Client.props" Condition="'$(EngineImports)' == 'true'" />
+  <Import Project="$(ForkRoot)RobustToolbox\Imports\Shared.props" Condition="'$(EngineImports)' == 'true'" />
+
+  <PropertyGroup>
+    <AllowDirectRobustReferences>true</AllowDirectRobustReferences>
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+</Project>

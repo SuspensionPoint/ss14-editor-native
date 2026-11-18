@@ -1,0 +1,28 @@
+diff --git a/Robust.Client/Properties/AssemblyInfo.cs b/Robust.Client/Properties/AssemblyInfo.cs
+index de1bbda..7af85a5 100644
+--- a/Robust.Client/Properties/AssemblyInfo.cs
++++ b/Robust.Client/Properties/AssemblyInfo.cs
+@@ -3,6 +3,9 @@
+ [assembly: InternalsVisibleTo("Robust.UnitTesting")]
+ [assembly: InternalsVisibleTo("Robust.Client.WebView")]
+ [assembly: InternalsVisibleTo("Robust.Lite")]
++// The map editor's view kernel builds a client-side world without the game controller.
++[assembly: InternalsVisibleTo("Editor.ViewKernel")]
++[assembly: InternalsVisibleTo("Editor.Native")]
+ [assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")]
+ [assembly: InternalsVisibleTo("Robust.Benchmarks")]
+ [assembly: InternalsVisibleTo("Robust.Client.Tests")]
+diff --git a/Robust.Shared/AssemblyInfo.cs b/Robust.Shared/AssemblyInfo.cs
+index 1120f96..40b5509 100644
+--- a/Robust.Shared/AssemblyInfo.cs
++++ b/Robust.Shared/AssemblyInfo.cs
+@@ -6,6 +6,9 @@
+ [assembly: InternalsVisibleTo("Robust.Server")]
+ [assembly: InternalsVisibleTo("Robust.Client")]
+ [assembly: InternalsVisibleTo("Robust.Lite")]
++// The map editor's view kernel builds a client-side world without the game controller.
++[assembly: InternalsVisibleTo("Editor.ViewKernel")]
++[assembly: InternalsVisibleTo("Editor.Native")]
+ [assembly: InternalsVisibleTo("Robust.UnitTesting")]
+ [assembly: InternalsVisibleTo("OpenToolkit.GraphicsLibraryFramework")]
+ [assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")] // Gives access to Castle(Moq)

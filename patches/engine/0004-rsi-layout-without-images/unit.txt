@@ -1,0 +1,3 @@
+adds: sprite sheets laid out from their meta.json without reading their images
+native: yes
+has: Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs public static bool LayoutOnly

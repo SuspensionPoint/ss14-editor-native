@@ -1,0 +1,56 @@
+# Makes a GitHub Release when a tag v* is pushed: the packages for every platform
+# (package.yml), attached to the release with notes GitHub writes from the pull requests.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag must match the editor's version in native/Cargo.toml (v0.1.0 for 0.1.0).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag matches the editor's version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' native/Cargo.toml | head -n 1)
+          if [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::The tag is ${GITHUB_REF_NAME} but native/Cargo.toml says $version. Tag v$version, or change the version first."
+            exit 1
+          fi
+
+  package:
+    needs: version
+    uses: ./.github/workflows/package.yml
+    with:
+      version: ${{ github.ref_name }}
+      retention-days: 7
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Each artifact holds one package zip. Downloaded together, they land side by side.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ss14-editor-*
+          path: packages
+          merge-multiple: true
+
+      - name: Make the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l packages
+          gh release create "$GITHUB_REF_NAME" packages/*.zip --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

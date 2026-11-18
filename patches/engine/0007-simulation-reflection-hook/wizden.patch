@@ -1,0 +1,50 @@
+diff --git a/Robust.Server.Testing/RobustServerSimulation.cs b/Robust.Server.Testing/RobustServerSimulation.cs
+index 66eb92d..eef70a4 100644
+--- a/Robust.Server.Testing/RobustServerSimulation.cs
++++ b/Robust.Server.Testing/RobustServerSimulation.cs
+@@ -54,6 +54,7 @@ namespace Robust.UnitTesting.Server
+     [PublicAPI]
+     public interface ISimulationFactory
+     {
++        ISimulationFactory RegisterReflection(ReflectionDelegate reflection);
+         ISimulationFactory RegisterComponents(CompRegistrationDelegate factory);
+         ISimulationFactory RegisterDependencies(DiContainerDelegate factory);
+         ISimulationFactory RegisterEntitySystems(EntitySystemRegistrationDelegate factory);
+@@ -105,6 +106,8 @@ namespace Robust.UnitTesting.Server
+         }
+     }
+ 
++    public delegate void ReflectionDelegate(IReflectionManager reflection);
++
+     public delegate void DiContainerDelegate(IDependencyCollection diContainer);
+ 
+     public delegate void CompRegistrationDelegate(IComponentFactory factory);
+@@ -115,6 +118,7 @@ namespace Robust.UnitTesting.Server
+ 
+     public sealed class RobustServerSimulation : ISimulation, ISimulationFactory
+     {
++        private ReflectionDelegate? _reflectionDelegate;
+         private DiContainerDelegate? _diFactory;
+         private CompRegistrationDelegate? _regDelegate;
+         private EntitySystemRegistrationDelegate? _systemDelegate;
+@@ -147,6 +151,12 @@ namespace Robust.UnitTesting.Server
+ 
+         private RobustServerSimulation() { }
+ 
++        public ISimulationFactory RegisterReflection(ReflectionDelegate factory)
++        {
++            _reflectionDelegate += factory;
++            return this;
++        }
++
+         public ISimulationFactory RegisterDependencies(DiContainerDelegate factory)
+         {
+             _diFactory += factory;
+@@ -206,6 +216,7 @@ namespace Robust.UnitTesting.Server
+             container.Register<ITransferManager, ServerTransferManager>();
+ 
+             var realReflection = new ServerReflectionManager();
++            _reflectionDelegate?.Invoke(realReflection);
+             realReflection.LoadAssemblies(new List<Assembly>(2)
+             {
+                 AppDomain.CurrentDomain.GetAssemblyByName("Robust.Shared"),

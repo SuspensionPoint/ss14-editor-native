@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in the editor doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! The more of this you fill in, the faster we can track it down.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the map ...
+        2. Choose the tool ...
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Editor version
+      description: The release (for example v0.1.0), or the package name if you used a pull request build.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS, Apple silicon
+        - macOS, Intel
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: fork
+    attributes:
+      label: Fork and commit
+      description: The fork you opened, and its commit if you know it. Run git rev-parse --short HEAD in the fork's folder to get it.
+      placeholder: Starlight, 1a2b3c4
+  - type: input
+    id: map
+    attributes:
+      label: Map
+      description: The map you had open, as a path inside the fork's Resources folder.
+      placeholder: Maps/Shuttles/emergency.yml
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or error text
+      description: Any error the editor showed. If you started it from a terminal, paste what the terminal printed.
+      render: text

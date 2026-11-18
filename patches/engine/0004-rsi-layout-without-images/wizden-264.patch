@@ -1,0 +1,44 @@
+diff --git a/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs b/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs
+index f7b9bda..9894a43 100644
+--- a/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs
++++ b/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs
+@@ -92,8 +92,14 @@ namespace Robust.Client.ResourceManagement
+                 var stateObject = metadata.States[index];
+                 // Load image from disk.
+                 var texPath = data.Path / (stateObject.StateId + ".png");
+-                using (var stream = manager.ContentFileRead(texPath))
++                if (LayoutOnly)
+                 {
++                    // Editor view kernel patch: a blank frame in place of the image, which is not read.
++                    reg.Src = new Image<Rgba32>(frameSize.X, frameSize.Y);
++                }
++                else
++                {
++                    using var stream = manager.ContentFileRead(texPath);
+                     reg.Src = Image.Load<Rgba32>(stream);
+                 }
+ 
+@@ -150,8 +156,8 @@ namespace Robust.Client.ResourceManagement
+             for (var index = 0; index < toAtlas.Length; index++)
+             {
+                 ref var reg = ref toAtlas[index];
+-                // Blit all the frames over.
+-                for (var i = 0; i < reg.TotalFrameCount; i++)
++                // Blit all the frames over, but for a layout alone, which leaves the sheet blank.
++                for (var i = 0; i < reg.TotalFrameCount && !LayoutOnly; i++)
+                 {
+                     var srcWidth = (reg.Src.Width / frameSize.X);
+                     var srcColumn = i % srcWidth;
+@@ -186,6 +192,12 @@ namespace Robust.Client.ResourceManagement
+             data.MetaAtlas = metadata.MetaAtlas;
+         }
+ 
++        /// <summary>
++        /// When set, an RSI folder is laid out from its meta.json alone: its images are not read
++        /// and its sheet is left blank. For hosts that track what is drawn but never draw.
++        /// </summary>
++        public static bool LayoutOnly;
++
+         internal static void LoadPostTexture(LoadStepData data)
+         {
+             var dimX = data.DimX;

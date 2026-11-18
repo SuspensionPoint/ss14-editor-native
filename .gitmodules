@@ -1,0 +1,3 @@
+[submodule "upstream/starlight"]
+	path = upstream/starlight
+	url = https://github.com/ss14Starlight/space-station-14.git

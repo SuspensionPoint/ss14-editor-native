@@ -1,0 +1,73 @@
+diff --git a/Robust.Server.Testing/RobustServerSimulation.cs b/Robust.Server.Testing/RobustServerSimulation.cs
+index eef70a4..7b87990 100644
+--- a/Robust.Server.Testing/RobustServerSimulation.cs
++++ b/Robust.Server.Testing/RobustServerSimulation.cs
+@@ -59,6 +59,7 @@ namespace Robust.UnitTesting.Server
+         ISimulationFactory RegisterDependencies(DiContainerDelegate factory);
+         ISimulationFactory RegisterEntitySystems(EntitySystemRegistrationDelegate factory);
+         ISimulationFactory RegisterPrototypes(PrototypeRegistrationDelegate factory);
++        ISimulationFactory AddRoot(AddRootDelegate factory);
+         ISimulation InitializeInstance();
+     }
+ 
+@@ -116,6 +117,8 @@ namespace Robust.UnitTesting.Server
+ 
+     public delegate void PrototypeRegistrationDelegate(IPrototypeManager protoMan);
+ 
++    public delegate void AddRootDelegate(IResourceManager resourceMan);
++
+     public sealed class RobustServerSimulation : ISimulation, ISimulationFactory
+     {
+         private ReflectionDelegate? _reflectionDelegate;
+@@ -123,6 +126,7 @@ namespace Robust.UnitTesting.Server
+         private CompRegistrationDelegate? _regDelegate;
+         private EntitySystemRegistrationDelegate? _systemDelegate;
+         private PrototypeRegistrationDelegate? _protoDelegate;
++        private AddRootDelegate? _addRootDelegate;
+ 
+         public IDependencyCollection Collection { get; private set; } = default!;
+ 
+@@ -181,6 +185,12 @@ namespace Robust.UnitTesting.Server
+             return this;
+         }
+ 
++        public ISimulationFactory AddRoot(AddRootDelegate factory)
++        {
++            _addRootDelegate += factory;
++            return this;
++        }
++
+         public ISimulation InitializeInstance()
+         {
+             var container = new DependencyCollection();
+@@ -251,7 +261,11 @@ namespace Robust.UnitTesting.Server
+             container.RegisterInstance<IBaseServerInternal>(new Mock<IBaseServerInternal>().Object);
+             container.RegisterInstance<IReflectionManager>(reflectionManager.Object); // tests should not be searching for types
+             container.RegisterInstance<IRobustSerializer>(new Mock<IRobustSerializer>().Object);
+-            container.RegisterInstance<IResourceManager>(new Mock<IResourceManager>().Object); // no disk access for tests
++            // Editor kernel patch: real resources when roots are given.
++            if (_addRootDelegate != null)
++                container.Register<IResourceManager, ResourceManager>();
++            else
++                container.RegisterInstance<IResourceManager>(new Mock<IResourceManager>().Object); // no disk access for tests
+             container.RegisterInstance<IGameTiming>(new Mock<IGameTiming>().Object); // TODO: get timing working similar to RobustIntegrationTest
+ 
+             //Tier 2: Simulation
+@@ -265,6 +279,7 @@ namespace Robust.UnitTesting.Server
+             container.Register<ISerializationManager, SerializationManager>();
+             container.Register<IRobustRandom, RobustRandom>();
+             container.Register<IPrototypeManager, ServerPrototypeManager>();
++            container.Register<IPrototypeManagerInternal, ServerPrototypeManager>();
+             container.Register<IComponentFactory, ComponentFactory>();
+             container.Register<IEntitySystemManager, EntitySystemManager>();
+             container.Register<IManifoldManager, CollisionManager>();
+@@ -364,6 +379,9 @@ namespace Robust.UnitTesting.Server
+             var protoMan = container.Resolve<IPrototypeManager>();
+             protoMan.Initialize();
+             protoMan.RegisterKind(typeof(EntityPrototype), typeof(EntityCategoryPrototype));
++
++            _addRootDelegate?.Invoke(container.Resolve<IResourceManager>());
++
+             _protoDelegate?.Invoke(protoMan);
+ 
+             // This just exists to set protoMan._hasEverBeenReloaded to True

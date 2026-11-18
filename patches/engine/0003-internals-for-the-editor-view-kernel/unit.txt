@@ -1,0 +1,3 @@
+adds: the engine's internals open to the editor's view kernel and engine side
+native: yes
+has: Robust.Client/Properties/AssemblyInfo.cs InternalsVisibleTo("Editor.Native")

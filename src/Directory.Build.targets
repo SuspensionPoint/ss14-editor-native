@@ -1,0 +1,27 @@
+<Project>
+  <!-- The constants for code only some forks and engines have (Directory.Build.props). -->
+  <PropertyGroup>
+    <DefineConstants Condition="'$(ForkPlumbing)' == 'true'">$(DefineConstants);FORK_PLUMBING</DefineConstants>
+    <DefineConstants Condition="'$(ForkDisposalExits)' == 'true'">$(DefineConstants);FORK_DISPOSAL_EXITS</DefineConstants>
+    <DefineConstants Condition="'$(ForkAnimatedBackdrops)' == 'true'">$(DefineConstants);FORK_ANIMATED_BACKDROPS</DefineConstants>
+    <DefineConstants Condition="'$(ForkServerAtmosphere)' == 'true'">$(DefineConstants);FORK_SERVER_ATMOSPHERE</DefineConstants>
+    <DefineConstants Condition="'$(ForkClientServicesAtInit)' == 'true'">$(DefineConstants);FORK_CLIENT_SERVICES_AT_INIT</DefineConstants>
+    <DefineConstants Condition="'$(ForkPredictedPopups)' == 'true'">$(DefineConstants);FORK_PREDICTED_POPUPS</DefineConstants>
+    <DefineConstants Condition="'$(ForkDecalChunkEntities)' == 'true'">$(DefineConstants);FORK_DECAL_CHUNK_ENTITIES</DefineConstants>
+    <DefineConstants Condition="'$(ForkSealedDeviceLinkSystem)' == 'true'">$(DefineConstants);FORK_SEALED_DEVICE_LINK_SYSTEM</DefineConstants>
+    <DefineConstants Condition="'$(ForkLinkedDeviceNetwork)' == 'true'">$(DefineConstants);FORK_LINKED_DEVICE_NETWORK</DefineConstants>
+    <DefineConstants Condition="'$(EngineMapSystemGrids)' == 'true'">$(DefineConstants);ENGINE_MAP_SYSTEM_GRIDS</DefineConstants>
+    <DefineConstants Condition="'$(EngineSerializerProviderTakesManager)' == 'true'">$(DefineConstants);ENGINE_SERIALIZER_PROVIDER_TAKES_MANAGER</DefineConstants>
+    <DefineConstants Condition="'$(EnginePrototypeTryComp)' == 'true'">$(DefineConstants);ENGINE_PROTOTYPE_TRYCOMP</DefineConstants>
+    <DefineConstants Condition="'$(EngineReflectionAttributeSet)' == 'true'">$(DefineConstants);ENGINE_REFLECTION_ATTRIBUTE_SET</DefineConstants>
+    <DefineConstants Condition="'$(EngineReflectionIsAttributeDefined)' == 'true'">$(DefineConstants);ENGINE_REFLECTION_IS_ATTRIBUTE_DEFINED</DefineConstants>
+    <DefineConstants Condition="'$(EnginePartialPrototypes)' == 'true'">$(DefineConstants);ENGINE_PARTIAL_PROTOTYPES</DefineConstants>
+    <DefineConstants Condition="'$(EngineKeyTags)' == 'true'">$(DefineConstants);ENGINE_KEY_TAGS</DefineConstants>
+    <DefineConstants Condition="'$(EngineDrawTextureRects)' == 'true'">$(DefineConstants);ENGINE_DRAW_TEXTURE_RECTS</DefineConstants>
+    <DefineConstants Condition="'$(EngineDrawRects)' == 'true'">$(DefineConstants);ENGINE_DRAW_RECTS</DefineConstants>
+    <DefineConstants Condition="'$(EngineSpritePostShaders)' == 'true'">$(DefineConstants);ENGINE_SPRITE_POST_SHADERS</DefineConstants>
+    <DefineConstants Condition="'$(EnginePendingRemoval)' == 'true'">$(DefineConstants);ENGINE_PENDING_REMOVAL</DefineConstants>
+    <DefineConstants Condition="'$(EngineMapLoaderText)' == 'true'">$(DefineConstants);ENGINE_MAP_LOADER_TEXT</DefineConstants>
+    <DefineConstants Condition="'$(EngineParallelBulkJobs)' == 'true'">$(DefineConstants);ENGINE_PARALLEL_BULK_JOBS</DefineConstants>
+  </PropertyGroup>
+</Project>

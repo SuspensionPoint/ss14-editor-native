@@ -1,0 +1,46 @@
+diff --git a/Robust.Shared/Prototypes/PrototypeManager.PreParsed.cs b/Robust.Shared/Prototypes/PrototypeManager.PreParsed.cs
+new file mode 100644
+index 0000000..589a2d0
+--- /dev/null
++++ b/Robust.Shared/Prototypes/PrototypeManager.PreParsed.cs
+@@ -0,0 +1,26 @@
++using System;
++using System.Collections.Generic;
++using System.IO;
++using Robust.Shared.Serialization.Markdown;
++using Robust.Shared.Utility;
++
++namespace Robust.Shared.Prototypes;
++
++// Editor kernel patch: pre-parsed prototype documents.
++//
++// Parsing every prototype file from YAML text is the slowest part of starting the engine in a
++// browser. This hook lets a host hand LoadDirectory the documents for a file already parsed
++// (the same DataNode trees the YAML parser would produce, built ahead of time on a desktop
++// machine). When the hook is unset, or returns null for a file, nothing changes.
++public partial class PrototypeManager
++{
++    /// <summary>
++    /// Returns the already-parsed documents for a prototype file, or null to parse its text.
++    /// </summary>
++    public static Func<ResPath, IEnumerable<DataNodeDocument>?>? PreParsedDocuments;
++
++    private static IEnumerable<DataNodeDocument> ParsePrototypeDocuments(ResPath file, TextReader reader)
++    {
++        return PreParsedDocuments?.Invoke(file) ?? DataNodeParser.ParseYamlStream(reader);
++    }
++}
+diff --git a/Robust.Shared/Prototypes/PrototypeManager.YamlLoad.cs b/Robust.Shared/Prototypes/PrototypeManager.YamlLoad.cs
+index 9bff63c..8fefec9 100644
+--- a/Robust.Shared/Prototypes/PrototypeManager.YamlLoad.cs
++++ b/Robust.Shared/Prototypes/PrototypeManager.YamlLoad.cs
+@@ -52,7 +52,8 @@ public partial class PrototypeManager
+                         return (file, Array.Empty<ExtractedMappingData>());
+ 
+                     var extractedList = new List<ExtractedMappingData>();
+-                    foreach (var document in DataNodeParser.ParseYamlStream(reader))
++                    // Editor kernel patch: see PrototypeManager.PreParsed.cs.
++                    foreach (var document in ParsePrototypeDocuments(file, reader))
+                     {
+                         LoadedData?.Invoke(document);
+ 

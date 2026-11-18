@@ -1,0 +1,120 @@
+# Builds the editor's package for each platform: the editor, an engine side built from upstream
+# Space Wizards, and the start script, in one zip. Called by pr.yml and release.yml. Each zip
+# is uploaded as an artifact named ss14-editor-<platform>-<version>.
+name: package
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: What the packages are named by. A commit (cut to 7 characters) or a tag.
+        type: string
+        required: true
+      retention-days:
+        description: How long the artifacts are kept.
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+env:
+  # The upstream fork the shipped engine side is built from (MIT throughout). Bump it with the
+  # commit of space-wizards/space-station-14 master that the editor's C# and engine patch units
+  # build against (docs/ci.md).
+  WIZDEN_URL: https://github.com/space-wizards/space-station-14.git
+  WIZDEN_COMMIT: a3f6b78d6888509ab142cb4fa0c44188cb31542c
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  CARGO_TERM_COLOR: always
+  # The system libraries the Rust crates build against on Linux (pr.yml says what each is for).
+  LINUX_PACKAGES: pkg-config libssl-dev libfontconfig1-dev libfreetype-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libwayland-dev
+
+jobs:
+  package:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, runtime: win-x64, platform: windows-x64 }
+          - { os: ubuntu-latest, runtime: linux-x64, platform: linux-x64 }
+          - { os: macos-15, runtime: osx-arm64, platform: macos-arm64 }
+          - { os: macos-15-intel, runtime: osx-x64, platform: macos-x64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The engine patches are made with Unix line ends, and so is the engine they go on.
+      - name: Git settings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+
+      - uses: actions/checkout@v7
+
+      - name: Names and folders
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # A commit is cut to 7 characters. A tag is used as it is.
+          if [[ "$VERSION" =~ ^[0-9a-f]{40}$ ]]; then VERSION="${VERSION:0:7}"; fi
+          echo "PACKAGE=ss14-editor-${{ matrix.platform }}-$VERSION" >> "$GITHUB_ENV"
+          echo "WORK=$(cd "$RUNNER_TEMP" && pwd)" >> "$GITHUB_ENV"
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends $LINUX_PACKAGES
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            native/target
+          key: cargo-${{ runner.os }}-${{ matrix.runtime }}-package-${{ hashFiles('native/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-${{ matrix.runtime }}-package-
+
+      - name: Build the editor
+        working-directory: native
+        run: cargo build --release -p ss14-editor
+
+      - name: Space Wizards' code and engine (sparse, shallow)
+        run: bash tools/ci/fork-checkout.sh "$WIZDEN_URL" "$WIZDEN_COMMIT" "$WORK/wizden" --code
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-wizden-${{ env.WIZDEN_COMMIT }}-${{ hashFiles('Directory.Packages.props', 'src/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-wizden-
+
+      - name: Build the engine side
+        run: bash tools/ci/engine-side.sh "$WORK/wizden" ${{ matrix.runtime }} "$WORK/engine"
+
+      - name: Stamp the engine side
+        run: |
+          editor=native/target/release/ss14-editor
+          [ -f "$editor.exe" ] && editor="$editor.exe"
+          "$editor" --stamp-engine "$WORK/engine" "$WORK/wizden"
+          echo "EDITOR=$editor" >> "$GITHUB_ENV"
+
+      - name: Package
+        run: bash tools/ci/package.sh "$EDITOR" "$WORK/engine" "$WORK/out/$PACKAGE.zip"
+
+      # The artifact is a zip of the package's zip: the inner zip keeps the programs' executable
+      # bits, which an artifact loses.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PACKAGE }}
+          path: ${{ runner.temp }}/out/${{ env.PACKAGE }}.zip
+          retention-days: ${{ inputs.retention-days }}
+          compression-level: 0
+          if-no-files-found: error

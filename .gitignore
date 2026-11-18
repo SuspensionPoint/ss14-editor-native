@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+.idea/
+# Rust build output
+native/**/target/
+# Packs, baked textures and check output made from a clone
+native/cache/
+native/out/

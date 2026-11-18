@@ -1,0 +1,35 @@
+[package]
+name = "ss14-editor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SS14 Map Editor: a map editor for Space Station 14 where the game's own engine holds the map. Its interface, made with Dioxus Native."
+publish = false
+
+[dependencies]
+editor-core = { path = "../editor-core" }
+dioxus-native = { version = "=0.8.0-alpha.3", features = ["prelude", "data-uri"] }
+anyrender = "0.14"
+blitz-dom = "=0.3.0-beta.4"
+blitz-shell = "=0.3.0-beta.4"
+blitz-net = "=0.3.0-beta.4"
+blitz-traits = "=0.3.0-beta.4"
+# Blitz draws the scroll areas' bars only with this feature. It fades them in on a scroll and out after.
+blitz-paint = { version = "=0.3.0-beta.4", features = ["scrollbars"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+peniko = "0.6"
+kurbo = "0.13"
+wgpu.workspace = true
+png.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+futures-channel = "0.3"
+futures-util = "0.3"
+# The operating system's file dialogs.
+rfd = "0.17"
+
+# The clown as the .exe's own icon, which Explorer and the task bar show.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

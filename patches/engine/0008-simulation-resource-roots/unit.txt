@@ -1,0 +1,5 @@
+adds: AddRoot on the test simulation, with a real resource manager when roots are given
+native: yes
+has: Robust.Server.Testing/RobustServerSimulation.cs AddRoot(AddRootDelegate
+# Older engines (264, 268) keep the test simulation in Robust.UnitTesting: wizden-264.patch.
+has: Robust.UnitTesting/Server/RobustServerSimulation.cs AddRoot(AddRootDelegate

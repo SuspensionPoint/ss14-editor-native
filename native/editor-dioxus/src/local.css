@@ -1,0 +1,200 @@
+/* What this interface adds to the web editor's built stylesheet: what the web editor styled
+   inline, what this editor has and the web editor does not, and what Blitz needs said. */
+
+html, body { margin: 0; height: 100%; background: #0d1b2a; color: #e0e0e0; font-family: system-ui, "Segoe UI", sans-serif; }
+
+/* The scroll bars' thumb. The web editor leaves its bars to Chrome, whose thumb is this grey.
+   Blitz draws no track unless one is given, so the track is left clear. */
+html { scrollbar-color: #c1c1c1 transparent; }
+
+/* The map: the widget fills its area, and the text over it lets the mouse through. */
+.map-surface { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; user-select: none; background: #111122; }
+.map-widget { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.map-label { position: absolute; transform: translate(-50%, -100%); background: rgba(0, 0, 0, 0.8); color: #fff; font-size: 12px; padding: 2px 4px; border-radius: 2px; white-space: nowrap; pointer-events: none; }
+.map-ghost { position: absolute; transform: translateX(-50%); font-size: 10px; line-height: 1.2; text-align: center; white-space: nowrap; pointer-events: none; }
+
+/* The list the wheel steps through. */
+.wheel-list { position: absolute; width: 220px; background: rgba(26, 26, 46, 0.95); border: 1px solid #2a2a4a; border-radius: 4px; pointer-events: none; overflow: hidden; font-family: Consolas, monospace; font-size: 12px; }
+.wheel-row { display: flex; align-items: center; height: 22px; color: #aaa; white-space: nowrap; overflow: hidden; }
+.wheel-row.current { background: rgba(15, 52, 96, 0.9); color: #fff; border-radius: 4px; }
+.wheel-count { width: 36px; padding-left: 6px; color: #888; flex-shrink: 0; }
+.wheel-mark { width: 16px; color: #4488ff; flex-shrink: 0; }
+.wheel-id { overflow: hidden; }
+
+/* The air overlay: its legend over the map's bottom left corner, its labels on rooms, and the
+   box by the mouse. */
+.air-legend { position: absolute; left: 12px; bottom: 12px; width: 280px; padding: 8px 10px; background: rgba(26, 26, 46, 0.92); border: 1px solid #2a2a4a; border-radius: 4px; color: #e0e0e0; font-size: 11px; pointer-events: none; }
+.air-legend-title { font-weight: bold; margin-bottom: 6px; }
+.air-legend-row { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; }
+.air-swatch { width: 20px; height: 20px; flex-shrink: 0; border-radius: 2px; }
+.air-legend-label { color: #ffffff; }
+.air-legend-meaning { color: #888888; font-size: 10px; }
+.air-legend-note { color: #8a8aa8; font-size: 10px; margin-bottom: 6px; }
+.air-scale-box { position: relative; height: 12px; margin: 4px 8px 0 8px; }
+.air-scale { display: flex; height: 12px; border-radius: 2px; overflow: hidden; }
+.air-scale-part { flex: 1; height: 12px; }
+.air-safe { position: absolute; top: -3px; height: 18px; box-sizing: border-box; border: 2px solid #ffffff; border-radius: 3px; }
+.air-ticks { position: relative; height: 14px; margin: 4px 8px 4px 8px; }
+.air-tick { position: absolute; top: 0; transform: translateX(-50%); color: #cccccc; font-size: 10px; white-space: nowrap; }
+.air-label { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px; height: 20px; box-sizing: border-box; padding: 0 9px 0 3px; background: rgba(10, 10, 22, 0.88); border: 1.5px solid #ffffff; border-radius: 10px; color: #f2f2f8; font-size: 11px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.air-label-icon { width: 14px; height: 14px; flex-shrink: 0; }
+.air-label-text { padding-left: 1px; }
+.air-hover { position: absolute; padding: 4px 6px; background: rgba(0, 0, 0, 0.85); border-radius: 3px; color: #e0e0e0; font-size: 11px; line-height: 1.35; pointer-events: none; }
+.air-hover-title { display: flex; align-items: center; gap: 5px; color: #ffffff; font-weight: bold; }
+.air-hover-icon { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* The performance display over the map's top left corner. */
+.performance { position: absolute; left: 14px; top: 14px; max-width: 640px; padding: 6px; background: rgba(0, 0, 0, 0.69); border-radius: 4px; color: #e0e0e0; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; pointer-events: none; }
+
+/* A text field's placeholder, which Blitz does not draw, over the field while it is empty. */
+.field { position: relative; width: 100%; }
+.placeholder { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: #888888; font-size: 12px; pointer-events: none; white-space: nowrap; }
+
+/* Blitz fills a ticked checkbox with the text colour and draws the tick in white, and leaves
+   accent-color alone, so the colour is said here to keep the tick visible. */
+.check { color: #4488ff; width: 13px; height: 13px; flex-shrink: 0; }
+
+/* The favourite's star on a palette's row: shown while the row is under the mouse, and always
+   on a favourite. On a tile's square it sits in the top right corner on a dark spot. */
+.fav-star { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 2px; cursor: pointer; opacity: 0; }
+.fav-row:hover .fav-star, .fav-star.on { opacity: 1; }
+.fav-corner { position: absolute; right: 0; top: 0; padding: 1px; background: rgba(13, 27, 42, 0.75); border-radius: 0 0 0 3px; }
+
+/* What is in hand, at the left of the status bar. */
+.in-hand { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; background: #16213e; border: 1px solid #4488ff; border-radius: 2px; }
+.pixelated { image-rendering: pixelated; }
+
+/* The backdrop gallery: a tile for each backdrop, its picture over its name. The one under
+   the mouse is the session's, and the map behind shows it, so it is a class and not :hover. */
+.backdrop-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.backdrop-tile { width: 164px; padding: 2px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; }
+.backdrop-tile.hovered { border-color: #2a2a4a; background: #1a2a4e; }
+.backdrop-tile.current { border-color: #4488ff; }
+.backdrop-picture { display: block; width: 160px; height: 90px; border-radius: 2px; }
+.backdrop-placeholder { display: flex; width: 160px; height: 90px; align-items: center; justify-content: center; background: #16213e; border-radius: 2px; color: #888888; font-size: 11px; }
+.backdrop-name { font-size: 11px; text-align: center; padding-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e0e0e0; }
+.backdrop-tile.current .backdrop-name { color: #4488ff; font-weight: bold; }
+
+/* The start screen (start_view.rs): a welcome, then sections of cards in a column down the
+   middle. Section labels in capitals with letter spacing, secondary words muted. */
+.start { flex: 1; display: flex; flex-direction: column; align-items: center; overflow-y: auto; padding: 56px 24px 72px 24px; background: #0d1b2a; color: #e0e0e0; font-size: 13px; }
+.start-page { width: 100%; max-width: 1040px; display: flex; flex-direction: column; }
+.start-header { display: flex; align-items: center; gap: 18px; margin-bottom: 40px; }
+.start-logo { display: grid; grid-template-columns: 20px 20px; grid-template-rows: 20px 20px; gap: 4px; flex-shrink: 0; }
+.start-logo-tile { border-radius: 4px; background: #0f3460; border: 1px solid #2a2a4a; }
+.start-logo-tile.lit { background: #4488ff; border-color: #4488ff; }
+.start-title { font-size: 30px; font-weight: 700; color: #ffffff; line-height: 1.15; }
+.start-purpose { color: #8a8aa8; font-size: 14px; margin-top: 4px; }
+.start-top-note { margin-bottom: 24px; }
+.start-section { margin-bottom: 40px; }
+.start-label { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; color: #8a8aa8; font-size: 11px; font-weight: 700; letter-spacing: 1.6px; }
+.start-label-count { color: #4488ff; letter-spacing: 0; }
+.start-label-rule { flex: 1; height: 1px; background: #1f2a48; }
+.start-section-words { color: #888888; font-size: 12px; margin: -6px 0 14px 0; }
+.start-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 14px; }
+.start-two { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 14px; }
+
+/* A card: lifts under the mouse, its border in the accent and its fill a little lighter. */
+.start-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #16213e; border: 1px solid #2a2a4a; border-radius: 8px; min-width: 0; }
+.start-card:hover { border-color: #4488ff; background: #1a2a4e; }
+.start-card.working { border-color: #24467a; }
+.start-card-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.start-card-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.start-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.start-name-row .start-muted { white-space: nowrap; }
+.start-name { font-size: 15px; font-weight: 600; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.start-badge { flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #ffffff; font-weight: 700; letter-spacing: 0.5px; }
+.start-icon { width: 44px; height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: #0f3460; color: #4488ff; }
+.start-tag { flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: 1px; padding: 2px 6px; border-radius: 3px; border: 1px solid #2a2a4a; color: #8a8aa8; }
+.start-tag.downloaded { color: #4488ff; border-color: #24467a; }
+.start-tag.added { color: #88ff88; border-color: #2f5a3a; }
+.start-tag.upstream { color: #e0e0e0; border-color: #3a3a5a; }
+.start-tag.missing { color: #ff8a8a; border-color: #8b3030; }
+.start-branch { display: flex; align-items: center; gap: 6px; color: #4488ff; font-size: 12px; min-width: 0; }
+.start-branch-mark { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid #4488ff; flex-shrink: 0; }
+.start-branch-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.start-muted { color: #888888; font-size: 12px; }
+.start-details { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #0d1b2a; border-radius: 6px; min-width: 0; }
+.start-path { color: #888888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.start-last { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.start-last-label { color: #8a8aa8; font-size: 9px; font-weight: 700; letter-spacing: 1px; flex-shrink: 0; }
+.start-last-name { color: #e0e0e0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.start-desc { color: #c0c0d0; font-size: 12px; line-height: 1.5; }
+.start-engine-note { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: #241e1a; border: 1px solid #4a3620; border-radius: 6px; color: #e0a860; font-size: 11px; line-height: 1.45; }
+.start-engine-dot { display: flex; padding-top: 4px; color: #ff8800; }
+.start-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; }
+.start-spacer { flex: 1; }
+
+/* Buttons: the primary action filled with the accent, the rest quieter. */
+.start-button { padding: 7px 14px; background: #1a1a3e; border: 1px solid #2a2a4a; border-radius: 5px; color: #e0e0e0; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.start-button:hover { border-color: #4488ff; background: #0f3460; }
+.start-button.primary { background: #4488ff; border-color: #4488ff; color: #ffffff; font-weight: 600; }
+.start-button.primary:hover { background: #5c98ff; border-color: #5c98ff; }
+.start-button.quiet { background: transparent; border-color: transparent; color: #888888; }
+.start-button.quiet:hover { color: #ff8a8a; background: transparent; border-color: transparent; }
+.start-button.danger { background: #5a1a22; border-color: #8b3030; color: #ffd0d0; }
+.start-button.danger:hover { background: #7a2430; border-color: #cc4444; }
+.start-button.small { padding: 3px 10px; font-size: 11px; }
+.start-corner { align-self: flex-start; flex-shrink: 0; margin: -6px -8px 0 0; }
+.start-button:disabled { opacity: 0.4; cursor: default; }
+.start-button:disabled:hover { border-color: #2a2a4a; background: #1a1a3e; }
+.start-button.primary:disabled:hover { background: #4488ff; border-color: #4488ff; }
+.start-button.quiet:disabled:hover { color: #888888; background: transparent; border-color: transparent; }
+.start-link { padding: 0; background: transparent; border: none; color: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; opacity: 0.85; }
+.start-link:hover { opacity: 1; }
+
+/* What runs in a card, and what it said. */
+.start-job { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: #0f1a30; border: 1px solid #24467a; border-radius: 6px; }
+.start-job-head { display: flex; align-items: center; gap: 10px; }
+.start-job-title { flex: 1; min-width: 0; color: #ffffff; font-weight: 600; font-size: 12px; }
+.start-job-time { color: #888888; font-size: 11px; flex-shrink: 0; }
+.start-job-stage { color: #a0a0b8; font-size: 11px; line-height: 1.45; }
+.start-bar { height: 6px; background: #0d1b2a; border-radius: 3px; overflow: hidden; }
+.start-bar-fill { height: 100%; background: #4488ff; border-radius: 3px; }
+.start-bar-unknown { height: 100%; width: 100%; background: #24467a; border-radius: 3px; }
+.start-note { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.45; }
+.start-note.error { background: #2a1420; border: 1px solid #8b3030; color: #ff9a9a; }
+.start-note.info { background: #13283f; border: 1px solid #24467a; color: #cfe0ff; }
+.start-note-line { font-size: 11px; opacity: 0.9; }
+.start-note-line.first { font-size: 12px; opacity: 1; }
+.start-note-actions { display: flex; gap: 14px; margin-top: 4px; }
+.start-ask { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; background: #1a2240; border: 1px solid #2a2a4a; border-radius: 6px; }
+.start-ask-words { color: #c0c0d0; font-size: 12px; line-height: 1.45; }
+
+/* A popular fork's choice between its repositories. */
+.start-choices { display: flex; flex-direction: column; gap: 6px; }
+.start-choice { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: transparent; border: 1px solid #2a2a4a; border-radius: 5px; color: #a0a0b8; font-size: 11px; text-align: left; cursor: pointer; }
+.start-choice:hover { border-color: #4488ff; }
+.start-choice.chosen { background: #13283f; border-color: #4488ff; color: #ffffff; }
+
+/* The first run's steps. */
+.start-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.start-step { display: flex; gap: 14px; padding: 16px; background: #16213e; border: 1px solid #2a2a4a; border-radius: 8px; }
+.start-step-number { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #0f3460; border: 1px solid #4488ff; color: #4488ff; font-weight: 700; }
+.start-step-title { color: #ffffff; font-weight: 600; margin-bottom: 4px; }
+.start-step-words { color: #a0a0b8; font-size: 12px; line-height: 1.5; }
+
+/* Add your own: the fields, and the folder and download marks. */
+.start-fields { display: flex; flex-direction: column; gap: 6px; }
+.start-field-label { color: #8a8aa8; font-size: 9px; font-weight: 700; letter-spacing: 1px; margin-top: 2px; }
+.start-input { width: 100%; box-sizing: border-box; padding: 7px 9px; background: #0d1b2a; border: 1px solid #2a2a4a; border-radius: 5px; color: #e0e0e0; font-size: 12px; outline: none; }
+.start-input:focus { border-color: #4488ff; }
+.start-folder { display: flex; flex-direction: column; align-items: flex-start; }
+.start-folder-tab { width: 9px; height: 4px; background: #4488ff; border-radius: 2px 2px 0 0; }
+.start-folder-body { width: 22px; height: 15px; border: 2px solid #4488ff; border-radius: 0 3px 3px 3px; box-sizing: border-box; }
+.start-download { display: flex; flex-direction: column; align-items: center; color: #4488ff; }
+.start-download-stem { width: 4px; height: 7px; background: #4488ff; }
+.start-download-base { width: 20px; height: 2px; margin-top: 3px; background: #4488ff; border-radius: 1px; }
+
+/* Recent maps: a compact list, each row opens its map. */
+.start-maps { display: flex; flex-direction: column; background: #16213e; border: 1px solid #2a2a4a; border-radius: 8px; overflow: hidden; }
+.start-map { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid #1f2a48; cursor: pointer; color: #888888; }
+.start-map:last-child { border-bottom: none; }
+.start-map:hover { background: #1a2a4e; color: #4488ff; }
+.start-map.disabled { cursor: default; opacity: 0.5; }
+.start-map.disabled:hover { background: transparent; color: #888888; }
+.start-map-name { flex-shrink: 0; color: #ffffff; font-weight: 600; }
+.start-map-folder { flex: 1; min-width: 0; color: #888888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.start-map-fork { flex-shrink: 0; color: #8a8aa8; font-size: 11px; }
+.start-map-go { display: flex; flex-shrink: 0; }
+.start-empty { padding: 18px; border: 1px dashed #2a2a4a; border-radius: 8px; color: #888888; text-align: center; }

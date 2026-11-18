@@ -1,0 +1,25 @@
+# The editor's Rust side: the interface (editor-dioxus) and the core it runs on (editor-core).
+[workspace]
+resolver = "2"
+members = ["editor-core", "editor-dioxus"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["SS14 Map Editor contributors"]
+license = "MIT"
+repository = "https://github.com/SuspensionPoint/ss14-editor-native"
+
+[workspace.dependencies]
+netcorehost = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wgpu = "30"
+bytemuck = { version = "1", features = ["derive"] }
+memmap2 = "0.9"
+lz4_flex = "0.14"
+png = "0.18"
+rayon = "1"
+
+[profile.release]
+debug = 1

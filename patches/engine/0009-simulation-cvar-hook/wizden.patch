@@ -1,0 +1,51 @@
+diff --git a/Robust.Server.Testing/RobustServerSimulation.cs b/Robust.Server.Testing/RobustServerSimulation.cs
+index 7b87990..e490644 100644
+--- a/Robust.Server.Testing/RobustServerSimulation.cs
++++ b/Robust.Server.Testing/RobustServerSimulation.cs
+@@ -60,6 +60,7 @@ namespace Robust.UnitTesting.Server
+         ISimulationFactory RegisterEntitySystems(EntitySystemRegistrationDelegate factory);
+         ISimulationFactory RegisterPrototypes(PrototypeRegistrationDelegate factory);
+         ISimulationFactory AddRoot(AddRootDelegate factory);
++        ISimulationFactory ChangeCVar(ChangeCVarDelegate factory);
+         ISimulation InitializeInstance();
+     }
+ 
+@@ -119,6 +120,8 @@ namespace Robust.UnitTesting.Server
+ 
+     public delegate void AddRootDelegate(IResourceManager resourceMan);
+ 
++    public delegate void ChangeCVarDelegate(IConfigurationManager configMan);
++
+     public sealed class RobustServerSimulation : ISimulation, ISimulationFactory
+     {
+         private ReflectionDelegate? _reflectionDelegate;
+@@ -127,6 +130,7 @@ namespace Robust.UnitTesting.Server
+         private EntitySystemRegistrationDelegate? _systemDelegate;
+         private PrototypeRegistrationDelegate? _protoDelegate;
+         private AddRootDelegate? _addRootDelegate;
++        private ChangeCVarDelegate? _changeCVarDelegate;
+ 
+         public IDependencyCollection Collection { get; private set; } = default!;
+ 
+@@ -191,6 +195,12 @@ namespace Robust.UnitTesting.Server
+             return this;
+         }
+ 
++        public ISimulationFactory ChangeCVar(ChangeCVarDelegate factory)
++        {
++            _changeCVarDelegate += factory;
++            return this;
++        }
++
+         public ISimulation InitializeInstance()
+         {
+             var container = new DependencyCollection();
+@@ -313,6 +323,8 @@ namespace Robust.UnitTesting.Server
+             configMan.LoadCVarsFromAssembly(typeof(RobustServerSimulation).Assembly); // Tests
+             configMan.LoadCVarsFromAssembly(typeof(RTCVars).Assembly); // Tests
+ 
++            _changeCVarDelegate?.Invoke(configMan);
++
+             var logMan = container.Resolve<ILogManager>();
+             logMan.RootSawmill.AddHandler(new TestLogHandler(configMan, "SIM"));
+ 

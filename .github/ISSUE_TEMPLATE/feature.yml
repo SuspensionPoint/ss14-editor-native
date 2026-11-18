@@ -1,0 +1,21 @@
+name: Feature request
+description: Something the editor could do, or do better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What you would like
+      description: What you're trying to do, and what makes it hard today.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it could work
+      description: Optional. How you picture it working, or how another editor handles it.
+  - type: input
+    id: fork
+    attributes:
+      label: Fork
+      description: Optional. The fork you map for, if the request is about something only that fork has.

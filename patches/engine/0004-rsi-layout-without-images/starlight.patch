@@ -1,0 +1,69 @@
+diff --git a/Robust.Client/ResourceManagement/ResourceCache.Preload.cs b/Robust.Client/ResourceManagement/ResourceCache.Preload.cs
+index 95f0a54..4be22a8 100644
+--- a/Robust.Client/ResourceManagement/ResourceCache.Preload.cs
++++ b/Robust.Client/ResourceManagement/ResourceCache.Preload.cs
+@@ -40,6 +40,13 @@ namespace Robust.Client.ResourceManagement
+         {
+             var sawmill = _logManager.GetSawmill("res.preload");
+ 
++            // Editor view kernel patch: a host that never draws loads each RSI when it is first used.
++            if (RSIResource.LayoutOnly)
++            {
++                sawmill.Debug("Skipping preloading: RSIs are laid out without their images.");
++                return;
++            }
++
+             PreloadRsis(sawmill);
+             if (!_configurationManager.GetCVar(CVars.ResTexturePreloadingEnabled))
+             {
+diff --git a/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs b/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs
+index 3277605..f4c72a3 100644
+--- a/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs
++++ b/Robust.Client/ResourceManagement/ResourceTypes/RSIResource.cs
+@@ -83,6 +83,12 @@ namespace Robust.Client.ResourceManagement
+                 metadata = RsiLoading.LoadRsiMetadata(manifestFile);
+             }
+ 
++            if (LayoutOnly)
++            {
++                LoadPreTextureLayoutOnly(metadata, ref data);
++                return;
++            }
++
+             Image<Rgba32>[]? images = null;
+             Image<Rgba32> sheet;
+ 
+@@ -126,6 +132,33 @@ namespace Robust.Client.ResourceManagement
+             data.MetaAtlas = metadata.MetaAtlas;
+         }
+ 
++        /// <summary>
++        /// When set, an RSI folder is laid out from its meta.json alone: its images are not read
++        /// and its sheet is left blank. For hosts that track what is drawn but never draw.
++        /// </summary>
++        public static bool LayoutOnly;
++
++        private static void LoadPreTextureLayoutOnly(RsiLoading.RsiMetadata metadata, ref LoadStepData data)
++        {
++            data.FrameCounts = RsiLoading.CalculateFrameCounts(metadata);
++
++            // The same layout as RsiLoading.GenerateAtlas.
++            var total = 0;
++            foreach (var count in data.FrameCounts)
++                total += count;
++            total = Math.Max(1, total);
++            var dimensionX = (int) MathF.Ceiling(MathF.Sqrt(total));
++            var dimensionY = (int) MathF.Ceiling((float) total / dimensionX);
++
++            data.AtlasSheet = new Image<Rgba32>(dimensionX * metadata.Size.X, dimensionY * metadata.Size.Y);
++            data.DimX = dimensionX;
++
++            LoadPreTextureCommon(metadata, ref data);
++
++            data.LoadParameters = metadata.LoadParameters;
++            data.MetaAtlas = metadata.MetaAtlas;
++        }
++
+         private static void LoadPreTextureRsic(ref LoadStepData data, Stream rsicFile)
+         {
+             Image<Rgba32> image;

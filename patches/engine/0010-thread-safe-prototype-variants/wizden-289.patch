@@ -1,0 +1,33 @@
+diff --git a/Robust.Shared/Prototypes/PrototypeManager.Variantization.cs b/Robust.Shared/Prototypes/PrototypeManager.Variantization.cs
+index af5b10c..57dfb9e 100644
+--- a/Robust.Shared/Prototypes/PrototypeManager.Variantization.cs
++++ b/Robust.Shared/Prototypes/PrototypeManager.Variantization.cs
+@@ -85,16 +85,21 @@ public partial class PrototypeManager
+     /// <param name="collectionVariants">A list of prototype variants derived from the same source prototype.</param>
+     private void RegisterVariantCollection(KindData kindData, List<string> collectionVariants)
+     {
+-        if (kindData.UnfrozenVariants == null)
++        // Editor engine patch: LoadDirectory extracts files on several threads at once, and each
++        // registers its variants here, so one at a time.
++        lock (kindData)
+         {
+-            kindData.UnfrozenVariants = kindData.Variants.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList());
+-        }
++            if (kindData.UnfrozenVariants == null)
++            {
++                kindData.UnfrozenVariants = kindData.Variants.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList());
++            }
+ 
+-        kindData.UnfrozenVariants.EnsureCapacity(kindData.UnfrozenVariants.Count + collectionVariants.Count);
++            kindData.UnfrozenVariants.EnsureCapacity(kindData.UnfrozenVariants.Count + collectionVariants.Count);
+ 
+-        foreach (var collectionMember in collectionVariants)
+-        {
+-            kindData.UnfrozenVariants[collectionMember] = collectionVariants;
++            foreach (var collectionMember in collectionVariants)
++            {
++                kindData.UnfrozenVariants[collectionMember] = collectionVariants;
++            }
+         }
+     }
+ 

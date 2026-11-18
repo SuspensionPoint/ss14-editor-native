@@ -1,0 +1,5 @@
+adds: ChangeCVar on the test simulation, so the kernel sets cvars before the game starts
+native: yes
+has: Robust.Server.Testing/RobustServerSimulation.cs ChangeCVar(ChangeCVarDelegate
+# Older engines (264, 268) keep the test simulation in Robust.UnitTesting: wizden-264.patch.
+has: Robust.UnitTesting/Server/RobustServerSimulation.cs ChangeCVar(ChangeCVarDelegate

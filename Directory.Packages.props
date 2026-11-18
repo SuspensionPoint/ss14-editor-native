@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    Reuse the fork's central package versions so this project never pins its own. ForkRoot is
+    set in src/Directory.Build.props, upstream/starlight unless a build gives another fork.
+  -->
+  <PropertyGroup>
+    <ForkRoot Condition="'$(ForkRoot)' == ''">$(MSBuildThisFileDirectory)upstream\starlight\</ForkRoot>
+  </PropertyGroup>
+  <Import Project="$(ForkRoot)Directory.Packages.props" />
+</Project>

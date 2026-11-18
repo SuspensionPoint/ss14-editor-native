@@ -1,0 +1,6 @@
+adds: prototype variants registered one thread at a time, which loading from the prototype cache otherwise races on
+native: yes
+# Only engines with prototype variants need it. The Space Wizards engine locks it since 296.
+for: Robust.Shared/Prototypes/PrototypeManager.Variantization.cs
+has: Robust.Shared/Prototypes/PrototypeManager.Variantization.cs lock (kindData)
+has: Robust.Shared/Prototypes/PrototypeManager.Variantization.cs lock (_variantRegistrationLock)
