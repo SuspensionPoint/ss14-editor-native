@@ -48,7 +48,7 @@ pub use engine_thread::Timing;
 pub use entity::{ComponentEntry, ComponentRow, FieldRow, RESERVED_COMPONENTS};
 pub use favourites::{FavouriteRow, FavouriteState, FAVOURITE_KEYS};
 pub use crate::forks::settings::{Favourite, FavouriteKind};
-pub use grids::{GridRow, GRID_FILE};
+pub use grids::{GridRow, GRID_FILE, MAP_GROUND};
 pub use palettes::{shown_name, InHand};
 pub use tools::{
     arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MenuAction, MenuEntry, Outline,

@@ -123,3 +123,20 @@ fn in_a_grid_file_grids_are_neither_added_nor_removed() {
     let (map, _answers, _engine) = opened(&scene());
     assert_eq!(map.grid_edits_refused(), None);
 }
+
+#[test]
+fn a_map_that_is_a_grid_itself_keeps_that_grid() {
+    // A planet's map is a grid too, with its ground as its tiles. The engine sends it as a grid.
+    let (mut session, _answers, engine) = opened(&scene().replace(r#""mapUid":1"#, &format!(r#""mapUid":{GRID}"#)));
+    assert_eq!(rows(&session), [(GRID, "grid".to_owned(), 36, true)]);
+    assert!(session.grid_rows()[0].ground);
+    assert_eq!(session.doc.as_ref().unwrap().entities_on(GRID), 3);
+
+    session.remove_grid(GRID);
+    assert!(asked(&engine).is_empty());
+    assert_eq!(session.status_line(), MAP_GROUND);
+
+    // The grid of an ordinary map is no ground.
+    let (map, _answers, _engine) = opened(&scene());
+    assert!(!map.grid_rows()[0].ground);
+}

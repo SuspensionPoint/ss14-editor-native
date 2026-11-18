@@ -209,7 +209,7 @@ since neither shuttle has disposals. So before a large change lands, run the sta
 | Device links and device lists (`src/Editor.Kernel/DeviceLinks.cs`) | `links` |
 | Adding and removing grids, a map's backdrop, the `air` question and its airtight rules | `grids` |
 | Fix grid atmos (`AirFix.cs`, the `air.fix` op) | `airfix` (`src/Editor.Native/AirFixCheck.cs`) |
-| Cable joins, pipe colours, connectors and layers, plumbing (`Visuals*.cs`), how the view applies them, the draw order of things under the floor, and the kinds on the Plumbing and Disposals layers (Disposals is the view's own: `KindOf` in `ViewWorld.DrawList.cs`) | `visuals` (`src/Editor.Native/VisualsCheck*.cs`). Plumbing with ducts isn't on any quick map, so also run it on `Maps/_Starlight/MedTak/MedTakPointAlpha.yml` |
+| The grids a scene sends (a map that is a grid itself, as a planet's is, among them) and the tiles the view draws, cable joins, pipe colours, connectors and layers, plumbing (`Visuals*.cs`), how the view applies them, the draw order of things under the floor, and the kinds on the Plumbing and Disposals layers (Disposals is the view's own: `KindOf` in `ViewWorld.DrawList.cs`) | `visuals` (`src/Editor.Native/VisualsCheck*.cs`). Plumbing with ducts isn't on any quick map, so also run it on `Maps/_Starlight/MedTak/MedTakPointAlpha.yml` |
 
 To run one check on the stations, from the repository root:
 

@@ -52,6 +52,7 @@ public static partial class VisualsCheck
         try
         {
             var looks = scene.Visuals.ToDictionary(look => look.Uid);
+            GridsSent(scene, yaml, say, tally);
             Colours(scene, yaml, looks, say, tally);
             var world = new World(scene, looks);
             Joins(world, say, tally);
@@ -71,6 +72,32 @@ public static partial class VisualsCheck
             session.ShowSubFloor(doc, false);
             session.Close(doc);
         }
+    }
+
+    // ---- grids ----
+
+    /// <summary>
+    /// Every grid the file lists is sent as a grid, the map itself too when it is one, as a
+    /// planet's is. A grid left out has no tiles in the view, and nothing on it is anchored.
+    /// </summary>
+    private static void GridsSent(Scene scene, string yaml, Action<string> say, Tally tally)
+    {
+        var stream = new YamlStream();
+        stream.Load(new StringReader(yaml));
+        var root = (YamlMappingNode) stream.Documents[0].RootNode;
+        if (!root.Children.TryGetValue("grids", out var listed) || listed is not YamlSequenceNode { Children.Count: > 0 } grids)
+        {
+            CheckSkips.Skip(say, "grids sent: the file lists no grids");
+            return;
+        }
+
+        var inFile = grids.Children.Select(grid => int.Parse(((YamlScalarNode) grid).Value!)).ToHashSet();
+        var sent = scene.Grids.Select(grid => grid.YamlUid).ToHashSet();
+        var maps = root.Children.TryGetValue("maps", out var mapList) && mapList is YamlSequenceNode mapNodes
+            ? mapNodes.Children.Select(node => int.Parse(((YamlScalarNode) node).Value!)).ToHashSet()
+            : [];
+        tally.Expect(inFile.SetEquals(sent),
+            $"every grid the file lists is sent: {inFile.Count} listed{(inFile.Overlaps(maps) ? ", the map among them" : "")}, {sent.Count} sent{(inFile.SetEquals(sent) ? "" : $", missing {string.Join(", ", inFile.Except(sent))}")}");
     }
 
     // ---- pipe colours ----
@@ -132,10 +159,12 @@ public static partial class VisualsCheck
         public readonly Dictionary<int, HashSet<Vector2i>> Tiles = new();
         public readonly Dictionary<int, SceneVisuals> Looks;
         public readonly List<SceneEntity> Cables = new();
+        public readonly IReadOnlyList<SceneGrid> Grids;
 
         public World(Scene scene, Dictionary<int, SceneVisuals> looks)
         {
             Looks = looks;
+            Grids = scene.Grids;
             var grids = scene.Grids.Select(grid => grid.Uid).ToHashSet();
             foreach (var grid in scene.Grids)
             {
@@ -322,6 +351,7 @@ public static partial class VisualsCheck
         // The textures of the whole list came with the list of the open. Each list after it
         // names only the new ones.
         var list = DrawList.Read(session, doc, null);
+        TilesDrawn(session, world, list, say, tally);
         session.ShowSubFloor(doc, true);
         list = DrawList.Read(session, doc, list.Textures);
 
@@ -389,6 +419,47 @@ public static partial class VisualsCheck
         }
 
         CheckSkips.Skip(say, "a pipe and a cable on one cell: none drawn");
+    }
+
+    /// <summary>
+    /// Every tile of the map whose prototype has a picture is drawn with it. A tile the view
+    /// does not know is left out of the list without a word, so a whole map can lose its floors.
+    /// </summary>
+    private static void TilesDrawn(EngineSession session, World world, DrawList list, Action<string> say, Tally tally)
+    {
+        using var known = JsonDocument.Parse(session.Command("tiles", "{}"));
+        var sprites = known.RootElement.EnumerateArray()
+            .Where(tile => tile.TryGetProperty("sprite", out var sprite) && sprite.ValueKind == JsonValueKind.String)
+            .ToDictionary(tile => tile.GetProperty("id").GetString()!, tile => tile.GetProperty("sprite").GetString()!);
+
+        var wanted = new Dictionary<string, int>();
+        foreach (var grid in world.Grids)
+        {
+            for (var i = 0; i + 4 < grid.Tiles.Count; i += 5)
+            {
+                if (sprites.TryGetValue(grid.TileIds[grid.Tiles[i + 2]], out var sprite))
+                    wanted[sprite] = wanted.GetValueOrDefault(sprite) + 1;
+            }
+        }
+
+        if (wanted.Count == 0)
+        {
+            CheckSkips.Skip(say, "tiles drawn: the map has no tile with a picture");
+            return;
+        }
+
+        var drawn = new Dictionary<string, int>();
+        foreach (var item in list.Items.Values.Where(item => item.Kind == 1))
+        foreach (var (texture, _) in item.Quads)
+        {
+            if (list.Textures.TryGetValue(texture, out var source))
+                drawn[source.Path] = drawn.GetValueOrDefault(source.Path) + 1;
+        }
+
+        // Edges of a neighbour can use a tile's own picture too, so more is fine and fewer is not.
+        var missing = wanted.Where(pair => drawn.GetValueOrDefault(pair.Key) < pair.Value).ToList();
+        tally.Expect(missing.Count == 0,
+            $"every one of {wanted.Values.Sum()} tiles with a picture is drawn, {drawn.Values.Sum()} tile images in all{(missing.Count > 0 ? ": " + string.Join("; ", missing.Take(4).Select(pair => $"{pair.Key} {drawn.GetValueOrDefault(pair.Key)} of {pair.Value}")) : "")}");
     }
 
     private static bool Near(float a, float b) => MathF.Abs(a - b) < 1.5f / 255;

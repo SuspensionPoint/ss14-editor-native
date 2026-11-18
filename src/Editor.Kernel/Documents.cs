@@ -345,6 +345,9 @@ public sealed class DocumentManager
         var document = Get(documentId);
         var grids = new List<SceneGrid>();
         var entities = new List<SceneEntity>();
+        // A map can be a grid itself, as a planet's is, with its ground as its tiles.
+        if (_entMan.TryGetComponent(document.Map, out MapGridComponent? ground))
+            grids.Add(DescribeGrid(document.Map, ground));
         Collect(document.Map, grids, entities);
 
         var info = new DocumentInfo(
@@ -354,7 +357,7 @@ public sealed class DocumentManager
             document.FormatVersion,
             document.EngineVersion,
             document.Map.Id,
-            entities.Count + grids.Count + 1,
+            entities.Count + grids.Count + (ground == null ? 1 : 0),
             document.LoadMilliseconds,
             _log.Drain());
         return new Scene(info, grids, entities, History(document), _visuals.All(document.Map, document.Visuals));
@@ -1014,6 +1017,8 @@ public sealed class DocumentManager
                     var grid = Owned(document, op.Grid);
                     if (!_entMan.HasComponent<MapGridComponent>(grid))
                         throw new KernelException($"Entity {op.Grid} is no grid.");
+                    if (grid == document.Map)
+                        throw new KernelException("The map's own ground is a grid of the map itself, and cannot be removed.");
                     if (document.Category == FileCategory.Grid)
                         throw new KernelException("A grid file holds exactly one grid.");
 
@@ -2296,7 +2301,8 @@ public sealed class DocumentManager
                 continue;
             }
 
-            if (uid == document.Map)
+            // The map itself is reported only when it is a grid too, as a planet's is.
+            if (uid == document.Map && !_entMan.HasComponent<MapGridComponent>(uid))
                 continue;
 
             if (_entMan.TryGetComponent(uid, out MapGridComponent? grid))
