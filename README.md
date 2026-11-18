@@ -107,26 +107,23 @@ cache.
 
 ## Where the editor keeps things
 
-Everything the editor makes lives in one folder:
+The editor writes everything it makes into one folder.
 
 | Platform | Folder |
 |---|---|
 | Windows | `%LOCALAPPDATA%\ss14-editor` (paste it into Explorer's address bar) |
-| macOS | `~/Library/Application Support/ss14-editor` (Finder: Cmd+Shift+G, then paste) |
+| macOS | `~/Library/Application Support/ss14-editor` (in Finder, press Cmd+Shift+G and paste it) |
 | Linux | `~/.local/share/ss14-editor`, or `$XDG_DATA_HOME/ss14-editor` if you set it |
 
-Inside it:
+Downloaded forks go in its `forks/` folder, one per fork. Goob Station, for example, lands in
+`forks/Goob-Station-Goob-Station`, and its maps sit in that folder's `Resources/Maps/`, which
+is where File > Open map... starts looking once you have it open in the editor. Your own
+checkouts stay put.
 
-- `forks/` holds the forks you downloaded, one folder each, named `<owner>-<repo>` (for
-  example `Goob-Station-Goob-Station`). A fork's maps are in its `Resources/Maps/`. File >
-  Open map... starts there for you.
-- `cache/` holds each fork's packed prototypes, baked textures and engine side. It's safe to
-  delete. The editor makes them again the next time it needs them.
-- `settings.json` remembers your forks, recent maps and favourites.
-- `avatars/` holds the forks' pictures for the start screen.
-
-Forks you added with **Use a checkout I have** stay where they are. Only downloads go into
-`forks/`.
+`cache/` holds each fork's packed prototypes, baked textures and engine side, and you can
+delete it when it gets big, though rebuilding an engine side takes a few minutes the next
+time you open that fork. Two smaller things live there too. `settings.json` keeps your forks,
+recent maps and favourites, and `avatars/` keeps the fork pictures on the start screen.
 
 ## Building from source
 
