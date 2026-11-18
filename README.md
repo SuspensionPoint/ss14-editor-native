@@ -105,6 +105,29 @@ details, including how to fetch them with the GitHub CLI.
 Your fork's checkout is never changed. The editor only reads it and works on copies in its
 cache.
 
+## Where the editor keeps things
+
+Everything the editor makes lives in one folder:
+
+| Platform | Folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\ss14-editor` (paste it into Explorer's address bar) |
+| macOS | `~/Library/Application Support/ss14-editor` (Finder: Cmd+Shift+G, then paste) |
+| Linux | `~/.local/share/ss14-editor`, or `$XDG_DATA_HOME/ss14-editor` if you set it |
+
+Inside it:
+
+- `forks/` holds the forks you downloaded, one folder each, named `<owner>-<repo>` (for
+  example `Goob-Station-Goob-Station`). A fork's maps are in its `Resources/Maps/`. File >
+  Open map... starts there for you.
+- `cache/` holds each fork's packed prototypes, baked textures and engine side. It's safe to
+  delete. The editor makes them again the next time it needs them.
+- `settings.json` remembers your forks, recent maps and favourites.
+- `avatars/` holds the forks' pictures for the start screen.
+
+Forks you added with **Use a checkout I have** stay where they are. Only downloads go into
+`forks/`.
+
 ## Building from source
 
 You need [Rust](https://rustup.rs), the [.NET 10 SDK](https://dotnet.microsoft.com/download)
