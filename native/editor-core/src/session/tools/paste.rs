@@ -360,7 +360,7 @@ impl Session {
     pub fn copy(&mut self) {
         match self.tool {
             Tool::Area if self.region.is_some() => self.copy_region(false),
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.copy_selection(),
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.copy_selection(),
         }
     }
 
@@ -368,7 +368,7 @@ impl Session {
     pub fn cut(&mut self) {
         match self.tool {
             Tool::Area if self.region.is_some() => self.copy_region(true),
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.cut_selection(),
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.cut_selection(),
         }
     }
 
@@ -550,11 +550,11 @@ impl Session {
         }
     }
 
-    /// Escape on the map: closes the area tool's menu, or else ends linking, or else ends
-    /// pasting, or else clears the selection and the region. An interface asks [`escape_to`]
+    /// Escape on the map: drops a room being dragged out, or else closes the area tool's
+    /// menu, or else ends linking, or else ends pasting, or else clears the selection and the region. An interface asks [`escape_to`]
     /// first whether Escape is the map's.
     pub fn escape(&mut self) {
-        if self.region_menu.take().is_some() || self.cancel_linking() {
+        if self.cancel_room() || self.region_menu.take().is_some() || self.cancel_linking() {
             return;
         }
         if !self.pasting.end() {

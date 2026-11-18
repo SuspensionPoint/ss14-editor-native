@@ -41,7 +41,7 @@ const GAS: [u8; 4] = [0x00, 0x88, 0xff, 255];
 impl Session {
     /// How the cell under the cursor is outlined with the tool in hand: Paint green, Erase red
     /// with an X, Pick yellow and dashed, Fill green over a faint green, Rectangle in the
-    /// accent, Line gold, Circle cyan, the cable and pipe tools in the colour they lay, Area
+    /// accent, Line gold, Circle cyan, Room orange, the cable and pipe tools in the colour they lay, Area
     /// white and dashed, and Place green and dashed, blue with Shift.
     pub fn hover_look(&self) -> HoverLook {
         match self.tool {
@@ -52,6 +52,7 @@ impl Session {
             Tool::Rectangle => HoverLook::edge([0x44, 0x88, 0xff, 255]),
             Tool::Line => HoverLook::edge([0xff, 0xcc, 0x00, 255]),
             Tool::Circle => HoverLook::edge([0x00, 0xcc, 0xff, 255]),
+            Tool::Room => HoverLook::edge([0xff, 0x88, 0x44, 255]),
             Tool::Cable => {
                 let (red, green, blue) = self.cable_kind().colour();
                 HoverLook::edge([red, green, blue, 255])

@@ -115,7 +115,7 @@ fn r_turns_with_an_entity_tool_and_chooses_the_rectangle_otherwise() {
                 click(&mut session, (2.5, 3.5));
                 assert_ne!(asked(&engine)[0][0]["rotation"], json!(0.0));
             }
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Link | Tool::Cable | Tool::Pipe => {
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {
                 assert_eq!((session.tool(), asked_for), (Tool::Rectangle, Vec::new()), "{tool:?}");
             }
         }
@@ -197,9 +197,9 @@ fn the_controls_list_names_every_tool_key() {
 #[test]
 fn the_toolbar_lists_the_entity_tools_and_then_the_cable_and_pipe_tools_last() {
     let entity_tools: Vec<bool> = Tool::ALL.iter().map(|entry| entry.tool.is_entity_tool()).collect();
-    assert_eq!(entity_tools, [false, false, false, false, false, false, false, false, false, true, true, true, false, false]);
+    assert_eq!(entity_tools, [false, false, false, false, false, false, false, false, false, false, true, true, true, false, false]);
     let laying_tools: Vec<bool> = Tool::ALL.iter().map(|entry| entry.tool.is_infrastructure_tool()).collect();
-    assert_eq!(laying_tools, [false, false, false, false, false, false, false, false, false, false, false, false, true, true]);
+    assert_eq!(laying_tools, [false, false, false, false, false, false, false, false, false, false, false, false, false, true, true]);
 }
 
 #[test]
