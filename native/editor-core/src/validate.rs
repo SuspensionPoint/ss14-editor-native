@@ -227,7 +227,7 @@ pub fn blocker(prototype: &Prototype) -> Option<Blocker> {
     if tagged("Diagonal") {
         return None;
     }
-    if tagged("Wall") {
+    if prototype.is_wall() {
         return Some(Blocker::Wall);
     }
     if tagged("Window") && !tagged("DirectionalWindow") && !named("Directional") && prototype.has("Airtight") {
@@ -466,7 +466,7 @@ fn floor_under_wall_in<'a>(doc: &Doc, standing: &[Standing], prototype: impl Fn(
         }
         let Some(prototype) = prototype(&entity.prototype) else { continue };
         let tagged = |tag: &str| prototype.tags.iter().any(|known| &**known == tag);
-        if !tagged("Wall") || tagged("Diagonal") {
+        if !prototype.is_wall() || tagged("Diagonal") {
             continue;
         }
         let tile = doc.tile_at(grid, cell);

@@ -494,6 +494,9 @@ fn walls_windows_and_doors_are_told_by_their_tags_and_components() {
     for id in ["WallSolidDiagonal", "WindowDirectional", "WindowBrassDirectional", "Grille", "Firelock", "ShuttersNormalOpen", "BlastDoor", "Windoor", "Table"] {
         assert_eq!(kind(id), None, "{id}");
     }
+    // Space Wizards' master marks walls with a Wall component, and no Wall tag.
+    let upstream = Prototype { id: "WallSolid".into(), components: vec![Arc::from("Wall")], anchored: true, ..Default::default() };
+    assert_eq!(blocker(&upstream), Some(Blocker::Wall));
 }
 
 #[test]

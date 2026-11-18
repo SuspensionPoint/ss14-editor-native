@@ -253,6 +253,12 @@ impl Prototype {
         self.components.iter().any(|name| &**name == component)
     }
 
+    /// Whether it is a wall. Forks mark walls one of two ways: the Wall tag, as Starlight and
+    /// older forks do, or the Wall component that Space Wizards' master uses in its place.
+    pub fn is_wall(&self) -> bool {
+        self.tags.iter().any(|tag| &**tag == "Wall") || self.has("Wall")
+    }
+
     /// Whether a mapper can place it: the game's spawn menu lists it.
     pub fn placeable(&self) -> bool {
         !self.is_abstract && !self.hide_spawn_menu
