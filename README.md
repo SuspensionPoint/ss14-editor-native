@@ -7,10 +7,9 @@ The engine holds the map while you work. Every tile you paint, every entity you 
 every file you save goes through the same code the game uses, so a map that looks right in
 the editor loads the same way on a server.
 
-<!-- Screenshot: add one or two pictures of the editor here (a station open with the side
-     panel, and the start screen). Use a fork's map and make sure no personal folder paths show
-     in the window. Put them in docs/images/ and link them like this:
-     ![The editor with a station open](docs/images/editor.png) -->
+![The editor with Starlight's arrivals shuttle open, its pipes and wiring showing](docs/images/editor.png)
+
+![The start screen, offering popular forks to download](docs/images/start-screen.png)
 
 ## What you can do
 
