@@ -236,7 +236,23 @@ public static class GridCheck
                 return uid;
             }
 
-            var old = scene.Grids.OrderByDescending(grid => grid.Tiles.Count).First();
+            // A map that is a grid itself, as a planet's is, keeps that grid.
+            var mapEntity = scene.Document.MapUid;
+            if (scene.Grids.Any(grid => grid.Uid == mapEntity))
+            {
+                var kept = Refusal(session, document, new EditOp("grid.remove", Grid: mapEntity));
+                tally.Expect(kept != null, $"the map's own ground is a grid that is not removed ({kept})");
+            }
+
+            var removable = scene.Grids.Where(grid => grid.Uid != mapEntity).ToList();
+            if (removable.Count == 0)
+            {
+                CheckSkips.Skip(say, "a grid removed: the map has no grid but its own ground");
+                Backdrops(session, scene, before, Out, tally);
+                return true;
+            }
+
+            var old = removable.OrderByDescending(grid => grid.Tiles.Count).First();
             var onIt = scene.Entities.Where(entity => GridOf(entity.Uid) == old.Uid).Select(entity => entity.Uid).ToHashSet();
             var emptied = Edit(session, document, "Remove grid", new EditOp("grid.remove", Grid: old.Uid));
             tally.Expect(emptied.Removed.Count == onIt.Count + 1 && emptied.Removed[^1] == old.Uid && emptied.Removed.Take(onIt.Count).All(onIt.Contains),

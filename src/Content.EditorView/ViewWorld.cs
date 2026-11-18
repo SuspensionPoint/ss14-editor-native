@@ -322,14 +322,23 @@ public sealed partial class ViewWorld
 
         doc.RecordAll = true;
 
-        // Placed at once. The client's ordinary setters start a smoothing animation from the
-        // old position to the new one, which is meant for movement arriving from a server and,
-        // with no server to finish it, would leave the grid sliding back and forth for ever.
-        var xform = _entMan.GetComponent<TransformComponent>(uid);
-        _xform.SetLocalPositionNoLerp(uid, new Vector2(scene.X, scene.Y), xform);
-        _xform.SetLocalRotationNoLerp(uid, new Angle(scene.Rotation), xform);
+        // The map can be a grid itself, as a planet's is. It is made one here too, and stays
+        // where a map is.
+        if (uid == doc.Map)
+        {
+            doc.Grids.Add(scene.Uid);
+        }
+        else
+        {
+            // Placed at once. The client's ordinary setters start a smoothing animation from the
+            // old position to the new one, which is meant for movement arriving from a server and,
+            // with no server to finish it, would leave the grid sliding back and forth for ever.
+            var xform = _entMan.GetComponent<TransformComponent>(uid);
+            _xform.SetLocalPositionNoLerp(uid, new Vector2(scene.X, scene.Y), xform);
+            _xform.SetLocalRotationNoLerp(uid, new Angle(scene.Rotation), xform);
+        }
 
-        var grid = _entMan.GetComponent<MapGridComponent>(uid);
+        var grid = _entMan.EnsureComponent<MapGridComponent>(uid);
         var tiles = new List<(Vector2i, Tile)>(scene.Tiles.Count / 5);
         for (var i = 0; i + 4 < scene.Tiles.Count; i += 5)
         {

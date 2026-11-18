@@ -109,11 +109,16 @@ public static partial class VisualsCheck
             return;
         }
 
+#if FORK_DISPOSAL_EXITS
         var disposals = entities.Where(entity => list.Items[entity.Uid].Kind == 6).ToList();
         var strangers = disposals.Where(entity => !entity.Prototype.StartsWith("Disposal", StringComparison.Ordinal)).Select(entity => entity.Prototype).Distinct().ToList();
         var missed = entities.Where(entity => list.Items[entity.Uid].Kind == 4 && entity.Prototype.StartsWith("Disposal", StringComparison.Ordinal)).Select(entity => entity.Prototype).Distinct().ToList();
         tally.Expect(disposals.Count > 0 && strangers.Count == 0 && missed.Count == 0,
             $"{disposals.Count} disposal tubes are drawn for the Disposals layer ({string.Join(", ", disposals.Select(entity => entity.Prototype).Distinct().Take(6))}); others there: {(strangers.Count > 0 ? string.Join(", ", strangers) : "none")}; disposals left under SubFloor: {(missed.Count > 0 ? string.Join(", ", missed) : "none")}");
+#else
+        // The fork's client has no tube component, so the view leaves tubes under SubFloor (ViewWorld.KindOf).
+        CheckSkips.Skip(say, "the Disposals layer: the fork's client can't tell a disposal tube");
+#endif
     }
 
     /// <summary>A duct laid beside a plumbing machine's node joins it at both ends, and undo parts them again.</summary>

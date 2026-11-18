@@ -7,6 +7,9 @@ use super::*;
 /// Why grids cannot be added or removed in a grid file.
 pub const GRID_FILE: &str = "A grid file holds exactly one grid, so you can't add or remove grids in it";
 
+/// Why a map that is a grid itself, as a planet's is, can't have that grid removed.
+pub const MAP_GROUND: &str = "This grid is the map's own ground, so it can't be removed";
+
 /// A grid as the grid list shows it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridRow {
@@ -15,13 +18,15 @@ pub struct GridRow {
     pub tiles: usize,
     /// The grid the tile tools work on where no grid has a tile.
     pub active: bool,
+    /// The map itself, which is a grid too, as a planet's is. It can't be removed.
+    pub ground: bool,
 }
 
 impl Session {
     /// The open map's grids, in the order the engine told them.
     pub fn grid_rows(&self) -> Vec<GridRow> {
         let Some(doc) = self.doc.as_ref() else { return Vec::new() };
-        doc.grids.iter().map(|grid| GridRow { uid: grid.uid, name: grid.name.clone(), tiles: grid.tiles.len(), active: grid.uid == doc.active_grid }).collect()
+        doc.grids.iter().map(|grid| GridRow { uid: grid.uid, name: grid.name.clone(), tiles: grid.tiles.len(), active: grid.uid == doc.active_grid, ground: grid.uid == doc.map_uid }).collect()
     }
 
     /// Centres the view on a grid's tiles, or on its origin if it has none, and makes it the
@@ -89,8 +94,12 @@ impl Session {
 
     /// Removes a grid with all on it.
     pub fn remove_grid(&mut self, uid: i32) {
-        if self.doc.as_ref().and_then(|doc| doc.grid(uid)).is_none() {
+        let Some(doc) = self.doc.as_ref() else { return };
+        if doc.grid(uid).is_none() {
             return;
+        }
+        if uid == doc.map_uid {
+            return self.set_status(MAP_GROUND);
         }
         if let Some(why) = self.grid_edits_refused() {
             return self.set_status(why);

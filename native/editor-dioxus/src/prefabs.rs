@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use dioxus_native::prelude::*;
 use editor_core::prefab::Preview;
+use editor_core::session::MAP_GROUND;
 
 use crate::dialogs::{ask_file, Asking, Chevron, Confirm, Modal, TextField};
 use crate::{bump, watch, with};
@@ -253,7 +254,7 @@ pub(crate) fn GridPalette() -> Element {
                 }
                 for row in rows {
                     {
-                        let (uid, label, tiles, active) = (row.uid, format!("{} ({})", row.name, row.uid), if row.tiles == 1 { "1 tile".to_owned() } else { format!("{} tiles", row.tiles) }, row.active);
+                        let (uid, label, tiles, active, ground) = (row.uid, format!("{} ({})", row.name, row.uid), if row.tiles == 1 { "1 tile".to_owned() } else { format!("{} tiles", row.tiles) }, row.active, row.ground);
                         let name = row.name.clone();
                         rsx! {
                             div { key: "{uid}", class: if active { "flex items-center gap-2 px-2 py-1 text-xs border-b border-subtle bg-active" } else { "flex items-center gap-2 px-2 py-1 text-xs border-b border-subtle hover:bg-hover" },
@@ -268,7 +269,8 @@ pub(crate) fn GridPalette() -> Element {
                                     "Rename"
                                 }
                                 button { class: "px-2 py-0.5 bg-elevated border border-subtle rounded-sm text-primary text-[10px] cursor-pointer hover:bg-hover",
-                                    disabled: !enabled,
+                                    disabled: !enabled || ground,
+                                    title: if ground { MAP_GROUND } else { "" },
                                     onclick: move |_| {
                                         with(|editor| editor.grids.removing = editor.session.grid_removal_question(uid).map(|question| (uid, question)));
                                         bump();
