@@ -27,7 +27,10 @@ the editor loads the same way on a server.
 - **Air**: an overlay of breathable air, pressure, temperature and rooms. A leak check shows
   where a room is open to space, and the game's own "fix grid atmos" is one menu away.
 - **Validate Map** catches common mistakes, like open disposal ends, rooms open to space and
-  uneven air.
+  uneven air. It also finds walls stacked on one cell, the same thing placed twice, and walls
+  with no floor under them. Buttons remove the extras or lay plating.
+- **Problems** in the Layers panel marks those mistakes on the map as you work. Hover a mark
+  to see what is wrong.
 - **Layers**, including SubFloor, Plumbing, Disposals and a T-Ray view.
 - Entity search, favourites, undo and redo. Help > Controls lists every key.
 

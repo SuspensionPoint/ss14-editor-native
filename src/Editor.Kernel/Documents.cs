@@ -1101,6 +1101,26 @@ public sealed class DocumentManager
                     Place(uid, old with { Parent = parent, Position = new Vector2(op.X, op.Y) });
                     break;
                 }
+                case "anchor":
+                {
+                    // Anchors an entity to the cell of its grid it stands on, as a wrench does in
+                    // the game. Validate Map's Lay plating uses it: a wall left on a cell with no
+                    // tile comes loose, and stays loose when a tile is laid under it. Tiles set
+                    // earlier in the edit go first, so the cell has its tile.
+                    FlushTiles(pendingTiles, changes, tileChanges);
+                    var uid = Owned(document, op.Uid);
+                    var xform = _entMan.GetComponent<TransformComponent>(uid);
+                    if (xform.Anchored)
+                        break;
+
+                    if (!_entMan.HasComponent<MapGridComponent>(xform.ParentUid))
+                        throw new KernelException($"Entity {op.Uid} is on no grid, so it can't be anchored.");
+
+                    _xform.AnchorEntity(uid, xform);
+                    if (!xform.Anchored)
+                        throw new KernelException($"Entity {op.Uid} can't be anchored. Its cell may have no tile.");
+                    break;
+                }
                 case "rotate":
                 {
                     var uid = Owned(document, op.Uid);

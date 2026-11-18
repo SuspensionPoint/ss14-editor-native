@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use dioxus_native::prelude::*;
 use editor_core::search::{Found, MOST_FOUND};
 use editor_core::session::Session;
-use editor_core::validate::{grouped, Severity, NOT_CHECKED};
+use editor_core::validate::{grouped, Fix, Severity, NOT_CHECKED};
 
 use crate::dialogs::{Chevron, Dot, Modal, TextField, Tick, Triangle};
 use crate::{bump, watch, with, Editor};
@@ -180,30 +180,50 @@ fn Validation() -> Element {
                 for (label, severity, found) in groups {
                     {
                         let expanded = open().contains(label);
+                        // A button for the whole group, where its findings are fixed together
+                        // in one edit: removing extras or laying plating.
+                        let all: Vec<editor_core::validate::Finding> = found.iter().filter(|finding| matches!(finding.fix(), Some(Fix::RemoveExtras | Fix::LayPlating))).cloned().collect();
+                        let fix_all = (all.len() > 1).then(|| match all[0].fix() {
+                            Some(Fix::RemoveExtras) => ("Remove all extras", "Keep one on each cell and delete the rest. One undo puts them all back."),
+                            _ => ("Lay plating under all", "Put plating under each one on a grid and anchor it. One undo takes it all away."),
+                        });
                         rsx! {
                             div { key: "{label}", class: "mb-3",
-                                button { class: "flex items-center gap-1.5 w-full text-left bg-transparent border-none cursor-pointer py-1 px-0 hover:bg-hover rounded",
-                                    onclick: move |_| {
-                                        let mut shown = open.write();
-                                        if !shown.remove(label) {
-                                            shown.insert(label);
+                                div { class: "flex items-center gap-2",
+                                    button { class: "flex items-center gap-1.5 flex-1 text-left bg-transparent border-none cursor-pointer py-1 px-0 hover:bg-hover rounded",
+                                        onclick: move |_| {
+                                            let mut shown = open.write();
+                                            if !shown.remove(label) {
+                                                shown.insert(label);
+                                            }
+                                        },
+                                        span { class: "text-muted flex items-center", Chevron { open: expanded } }
+                                        match severity {
+                                            Severity::Error => rsx! { span { class: "text-danger flex items-center", Dot { filled: true, size: 9 } } },
+                                            Severity::Warning => rsx! { span { class: "text-warning flex items-center", Triangle { towards: "up", size: 5 } } },
+                                            Severity::Notice => rsx! { span { class: "text-accent flex items-center", Dot { filled: false, size: 9 } } },
                                         }
-                                    },
-                                    span { class: "text-muted flex items-center", Chevron { open: expanded } }
-                                    match severity {
-                                        Severity::Error => rsx! { span { class: "text-danger flex items-center", Dot { filled: true, size: 9 } } },
-                                        Severity::Warning => rsx! { span { class: "text-warning flex items-center", Triangle { towards: "up", size: 5 } } },
-                                        Severity::Notice => rsx! { span { class: "text-accent flex items-center", Dot { filled: false, size: 9 } } },
+                                        span { class: "font-semibold text-primary text-[13px]", "{label}" }
+                                        span { class: "text-muted text-[11px]", "({found.len()})" }
                                     }
-                                    span { class: "font-semibold text-primary text-[13px]", "{label}" }
-                                    span { class: "text-muted text-[11px]", "({found.len()})" }
+                                    if let Some((words, does)) = fix_all {
+                                        button { class: "bg-active border border-subtle rounded text-accent text-[11px] px-2 py-0.5 cursor-pointer hover:bg-hover",
+                                            title: "{does}",
+                                            onclick: move |_| {
+                                                with(|editor| editor.session.fix_findings(&all));
+                                                bump();
+                                            },
+                                            "{words}"
+                                        }
+                                    }
                                 }
                                 if expanded {
                                     div { class: "ml-5 mt-0.5",
                                         for (index, finding) in found.into_iter().enumerate() {
                                             {
-                                                let fixes = finding.fixes_air();
+                                                let fix = finding.fix();
                                                 let message = finding.message.clone();
+                                                let fixed = finding.clone();
                                                 rsx! {
                                                     div { key: "{index}", class: "flex items-start gap-2 text-[11px] text-primary py-0.5 px-1 rounded hover:bg-hover cursor-pointer",
                                                         // As in the web editor, a click jumps and closes the list.
@@ -215,16 +235,22 @@ fn Validation() -> Element {
                                                             bump();
                                                         },
                                                         span { class: "flex-1", "{message}" }
-                                                        // Fix grid atmos on its grid, at once. The list stays and is found again.
-                                                        if let Some(grid) = fixes {
-                                                            button { class: "bg-active border border-subtle rounded text-accent text-[11px] px-2 py-0.5 cursor-pointer hover:bg-hover",
-                                                                title: "Run Fix grid atmos on this grid. Every floor gets standard station air, and one undo reverts it.",
+                                                        // Its fix, at once. The list stays and is found again, except
+                                                        // after a Select, which closes it as a jump does.
+                                                        if let Some(fix) = fix {
+                                                            button { class: "bg-active border border-subtle rounded text-accent text-[11px] px-2 py-0.5 cursor-pointer hover:bg-hover whitespace-nowrap",
+                                                                title: "{fix.does()}",
                                                                 onclick: move |event| {
                                                                     event.stop_propagation();
-                                                                    with(|editor| editor.session.fix_grid_air(grid));
+                                                                    with(|editor| {
+                                                                        editor.session.fix_finding(&fixed);
+                                                                        if matches!(fix, Fix::Select(_)) {
+                                                                            editor.validation = None;
+                                                                        }
+                                                                    });
                                                                     bump();
                                                                 },
-                                                                "Fix"
+                                                                "{fix.label()}"
                                                             }
                                                         }
                                                     }

@@ -47,11 +47,11 @@ pub fn label_shown(tiles: usize, tile_pixels: f32) -> bool {
 }
 
 /// A point in a tile, from its top left corner across and down, as a picture of it is drawn.
-type Point = (f32, f32);
+pub(crate) type Point = (f32, f32);
 
 /// One rectangle of the overlay, by its corners in world tiles: bottom left, bottom right,
 /// top right, top left, or any four in order round.
-fn quad(corners: [Point; 4], colour: [u8; 3], alpha: f32, out: &mut Vec<f32>) {
+pub(crate) fn quad(corners: [Point; 4], colour: [u8; 3], alpha: f32, out: &mut Vec<f32>) {
     for corner in corners {
         out.extend_from_slice(&[corner.0, corner.1]);
     }
@@ -61,7 +61,7 @@ fn quad(corners: [Point; 4], colour: [u8; 3], alpha: f32, out: &mut Vec<f32>) {
 }
 
 /// A straight stroke from one point to another, as four corners round.
-fn stroke(from: Point, to: Point, width: f32) -> [Point; 4] {
+pub(crate) fn stroke(from: Point, to: Point, width: f32) -> [Point; 4] {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     let length = (dx * dx + dy * dy).sqrt().max(1e-6);
     let (nx, ny) = (-dy / length * width / 2.0, dx / length * width / 2.0);
@@ -69,7 +69,7 @@ fn stroke(from: Point, to: Point, width: f32) -> [Point; 4] {
 }
 
 /// A small square about a point.
-fn square(at: Point, side: f32) -> [Point; 4] {
+pub(crate) fn square(at: Point, side: f32) -> [Point; 4] {
     let half = side / 2.0;
     [(at.0 - half, at.1 - half), (at.0 + half, at.1 - half), (at.0 + half, at.1 + half), (at.0 - half, at.1 + half)]
 }
@@ -496,7 +496,7 @@ pub fn sample(sample: Sample, size: u32) -> Vec<u8> {
 }
 
 /// A disc as triangles round its middle, each four corners with two in one place.
-fn disc(middle: Point, radius: f32) -> Vec<[Point; 4]> {
+pub(crate) fn disc(middle: Point, radius: f32) -> Vec<[Point; 4]> {
     let at = |step: usize| {
         let (sin, cos) = (step as f32 / 24.0 * std::f32::consts::TAU).sin_cos();
         (middle.0 + cos * radius, middle.1 + sin * radius)
@@ -506,7 +506,7 @@ fn disc(middle: Point, radius: f32) -> Vec<[Point; 4]> {
 
 /// The shapes of an icon in a circle one wide, from its top left corner across and down.
 /// Strokes that meet have a square at the joint, so that no gap shows.
-fn icon_shapes(icon: Icon) -> Vec<[Point; 4]> {
+pub(crate) fn icon_shapes(icon: Icon) -> Vec<[Point; 4]> {
     let width = 0.12;
     let path = |points: &[Point]| {
         let mut shapes: Vec<[Point; 4]> = points.windows(2).map(|pair| stroke(pair[0], pair[1], width)).collect();
