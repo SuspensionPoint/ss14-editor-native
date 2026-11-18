@@ -113,7 +113,7 @@ pub fn git_installed() -> bool {
     quiet(Command::new("git").arg("--version")).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|status| status.success())
 }
 
-pub const NO_GIT: &str = "Git isn't installed, or the editor can't find it. You need git to download a fork, so install it from git-scm.com and restart the editor. Checkouts you already have still work.";
+pub const NO_GIT: &str = "Git isn't installed, or the editor can't find it. The editor uses git to download forks and to read your checkouts, so install it from git-scm.com and restart the editor.";
 
 /// Where git is in its work, from the lines it writes with `--progress`.
 #[derive(Clone, Debug, Default, PartialEq)]

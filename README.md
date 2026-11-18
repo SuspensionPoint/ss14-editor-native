@@ -120,10 +120,14 @@ Downloaded forks go in its `forks/` folder, one per fork. Goob Station, for exam
 is where File > Open map... starts looking once you have it open in the editor. Your own
 checkouts stay put.
 
-`cache/` holds each fork's packed prototypes, baked textures and engine side, and you can
-delete it when it gets big, though rebuilding an engine side takes a few minutes the next
-time you open that fork. Two smaller things live there too. `settings.json` keeps your forks,
-recent maps and favourites, and `avatars/` keeps the fork pictures on the start screen.
+`cache/` holds each fork's packed prototypes, baked textures and engine side. Delete it when
+it gets big. Rebuilding an engine side takes a few minutes the next time you open that fork,
+so the first open after a clean-out is the slow one.
+
+The rest sits at the top of the folder. `prefabs/` holds your saved prefabs, shared by every
+fork, and `backdrops/` keeps the painted space backdrops so they don't need drawing again.
+`settings.json` remembers your forks, recent maps and favourites, and `avatars/` holds the
+fork pictures on the start screen.
 
 ## Building from source
 
