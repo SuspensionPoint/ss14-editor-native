@@ -64,7 +64,7 @@ You also need the [.NET 10 SDK](https://dotnet.microsoft.com/download). The edit
 .NET 10 runtime, which comes with the SDK. The SDK itself is there so the editor can build an
 engine side for your fork, which nearly every fork needs the first time you open it.
 
-**Windows.** Unzip the folder and run `start.cmd`. The build isn't signed, so SmartScreen may
+**Windows.** Unzip the folder and run `ss14-editor.exe` (or `start.cmd`). The build isn't signed, so SmartScreen may
 warn you. Click "More info", then "Run anyway".
 
 **macOS.** Unzip the folder. The build isn't signed, so macOS will hold it back until you clear

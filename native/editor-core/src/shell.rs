@@ -60,6 +60,9 @@ impl ShellArgs {
             bake(&args[1..]);
         }
         match args.len() {
+            // Opened with nothing, as a double click does: the engine side the package puts
+            // beside the program.
+            0 if packaged_engine().is_some() => Launch::StartScreen { engine_folder: packaged_engine().unwrap() },
             1 => Launch::StartScreen { engine_folder: PathBuf::from(&args[0]) },
             4.. => Launch::Fork(ShellArgs {
                 engine_folder: PathBuf::from(&args[0]),
@@ -106,6 +109,13 @@ impl ShellArgs {
     pub fn open_textures(&self) -> BakedTextures {
         BakedTextures::open(&self.textures_file).unwrap_or_else(|e| panic!("{e}"))
     }
+}
+
+/// The `engine` folder beside the program, as a release package lays it out, if it holds an
+/// engine side.
+fn packaged_engine() -> Option<PathBuf> {
+    let engine = std::env::current_exe().ok()?.parent()?.join("engine");
+    engine.join("Editor.Native.dll").is_file().then_some(engine)
 }
 
 /// `--stamp-engine <engine folder> <fork repo>`: writes the code fingerprint of the checkout an

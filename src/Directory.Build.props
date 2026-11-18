@@ -14,7 +14,7 @@
   <!-- What every project of the editor says about itself. -->
   <PropertyGroup>
     <Product>SS14 Map Editor</Product>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>SS14 Map Editor contributors</Authors>
     <Copyright>Copyright (c) SS14 Map Editor contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
