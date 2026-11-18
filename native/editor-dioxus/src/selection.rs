@@ -344,7 +344,7 @@ pub(crate) fn InfrastructurePanel() -> Element {
 }
 
 /// The layers panel: a checkbox for each layer, the connections view, and the air overlay
-/// with its three views.
+/// with its four views.
 ///
 /// Every checkbox here and elsewhere listens for `input`. Blitz ticks a clicked box itself and
 /// sends only an `input` event. It has no `change` event, so `onchange` is never called.

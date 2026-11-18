@@ -154,7 +154,7 @@ pub(crate) fn PrefabPalette() -> Element {
             div { class: "flex-1 overflow-y-auto",
                 if rows.is_empty() {
                     div { class: "text-muted text-xs p-3 italic text-center leading-relaxed",
-                        if searching { "No matching prefabs." } else { "No prefabs yet. Save a region with Area Select's right-click menu, or import a file." }
+                        if searching { "No matching prefabs." } else { "No prefabs yet. Save a region with Select's right-click menu, or import a file." }
                     }
                 }
                 for (index, line) in lines.into_iter().enumerate() {

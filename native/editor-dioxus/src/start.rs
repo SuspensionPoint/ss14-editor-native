@@ -831,7 +831,7 @@ fn demo(start: &mut Start, which: &str) {
             can_stop: true,
             stopping: false,
         };
-        start.demo_jobs.push((Place::Popular(POPULAR_FORKS[0].name), download));
+        start.demo_jobs.push((Place::Popular("Goob Station"), download));
         if let Some(first) = &first {
             let build = JobView {
                 title: "Building the engine side".to_owned(),
