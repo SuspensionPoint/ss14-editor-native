@@ -157,8 +157,8 @@ impl Pictures {
             let pixels = pixels.chunks_exact(4).flat_map(|pixel| [0, 0, 0, (pixel[3] as f32 * 0.35) as u8]).collect();
             image((*width, *height, pixels))
         });
-        let steel = Path::new(fork_repo).join("Resources").join("Textures").join("Tiles").join("steel.png");
-        let steel = std::fs::File::open(steel).ok().and_then(|file| decode_premultiplied_from(BufReader::new(file)));
+        let steel = editor_core::loading::steel_tile_picture(Path::new(fork_repo));
+        let steel = steel.and_then(|steel| std::fs::File::open(steel).ok()).and_then(|file| decode_premultiplied_from(BufReader::new(file)));
         Pictures { clown: clown.map(image), shadow, steel: steel.map(image) }
     }
 }

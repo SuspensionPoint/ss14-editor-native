@@ -31,14 +31,14 @@ const FIRST_WALL: &str = "WallSolid";
 /// them.
 pub fn needs_floor(prototype: &Prototype) -> bool {
     let tagged = |tag: &str| prototype.tags.iter().any(|known| &**known == tag);
-    tagged("Wall") || (prototype.anchored && (tagged("Window") || prototype.has("CanBuildWindowOnTop") || prototype.has("Door")))
+    prototype.is_wall() || (prototype.anchored && (tagged("Window") || prototype.has("CanBuildWindowOnTop") || prototype.has("Door")))
 }
 
 /// Whether the Room tool can build with this prototype: it has the Wall tag and not the
 /// Diagonal tag, and a mapper can place it.
 pub fn is_room_wall(prototype: &Prototype) -> bool {
     let tagged = |tag: &str| prototype.tags.iter().any(|known| &**known == tag);
-    tagged("Wall") && !tagged("Diagonal") && prototype.placeable()
+    prototype.is_wall() && !tagged("Diagonal") && prototype.placeable()
 }
 
 /// How walls are placed, and where that is kept.

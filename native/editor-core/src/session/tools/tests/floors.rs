@@ -70,6 +70,9 @@ fn walls_windows_grilles_and_doors_need_a_floor() {
     // The room is built with straight walls only.
     let rooms: Vec<bool> = session.prototypes().iter().map(is_room_wall).collect();
     assert_eq!(rooms, [true, false, false, false, false, false, false]);
+    // Space Wizards' master marks walls with a Wall component, and no Wall tag.
+    let upstream = made("WallSolid", &[], &["Wall"], true);
+    assert!(needs_floor(&upstream) && is_room_wall(&upstream));
 }
 
 #[test]
