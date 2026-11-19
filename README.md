@@ -15,16 +15,18 @@ the editor loads the same way on a server.
 
 - **Open your fork.** Point the editor at a fork you already have, or download a popular one
   from the start screen. It builds whatever that fork's code needs, once.
-- **Tiles**: paint, erase, rectangle, fill, line and circle.
+- **Tools like an art program's**: pick a tool, then what it works on and in what shape. Paint
+  and Erase work on tiles, entities or decals, at a point or in a line, rectangle or circle.
+  Fill floods an area of one tile.
 - **Rooms**: drag out a room and get the floor inside, plating and walls round the edge, in
-  one step. Walls already there are never stacked. Turn on Intersection to join overlapping
-  rooms into one, for hallways and extensions.
+  one step. Walls already there are never stacked. Turn on Join overlapping rooms for
+  hallways and extensions.
 - **Entities**: place, select, move, turn, delete, and nudge with the arrow keys. Edit
   components in typed forms or as raw text, and put things into containers. Walls, windows,
   grilles and doors placed out in space get plating under them. You can switch this off or pick
   another tile.
-- **Areas**: select a block of cells and copy, cut, paste, turn or delete it with everything
-  on it. Save a block as a prefab and stamp it onto any map.
+- **Select** entities, decals, or with Tiles a block of cells. Copy, cut, paste, turn or
+  delete a block with everything on it. Save a block as a prefab and stamp it onto any map.
 - **Decals**, **cables** and **pipes**. Pipes fit themselves to their neighbours as you lay them.
 - **Device links**: hook buttons, sensors and alarms up to their devices, edit device lists,
   or auto-link a whole room.

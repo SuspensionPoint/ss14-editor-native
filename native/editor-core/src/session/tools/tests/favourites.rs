@@ -78,7 +78,7 @@ fn choosing_a_favourite_chooses_it_as_its_own_palette_does() {
     session.toggle_favourite(Favourite::new(FavouriteKind::Decal, "Arrows"));
     session.toggle_favourite(Favourite::new(FavouriteKind::Tile, "FloorWood"));
 
-    // An entity takes E-Place in hand and asks how it looks, as choose_entity does.
+    // An entity takes the place tool in hand and asks how it looks, as choose_entity does.
     session.set_tool(Tool::Fill);
     assert!(session.choose_favourite(0));
     assert_eq!((session.palette().clone(), session.tool()), (Palette::Entity(1), Tool::Place));

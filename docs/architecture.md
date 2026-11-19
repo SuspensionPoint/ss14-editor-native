@@ -60,14 +60,16 @@ All of it is under `native/`. Build one package at a time.
 | `editor-core/src/session/mod.rs` | 1080 | `Session`: the camera, palettes, selection, layer switches, and whatever is waiting on the engine. `Session::offline` runs the tools with no engine, for unit tests. |
 | `editor-core/src/session/engine_thread.rs` | 600 | What the session asks the engine, and what comes back. |
 | `editor-core/src/session/zoom.rs` | 70 | Wheel zoom, spread over a few frames so each notch glides. The interface calls `advance_zoom` once a frame and asks for another frame while more zoom is still owed. Tests in `tools/tests/view.rs`. |
-| `editor-core/src/session/tools/mod.rs` | 860 | Sends presses, drags and keys to the tools. Its module doc is the rule sheet for adding a tool. |
-| `editor-core/src/session/tools/tiles.rs` | 360 | Paint, Erase, Rectangle, Fill. |
+| `editor-core/src/session/tools/mod.rs` | 860 | Sends presses, drags and keys to the tools. Its module doc is the rule sheet for adding a tool. `CONTROLS` is the list Help > Controls shows. |
+| `editor-core/src/toolbox.rs` | 400 | The toolbar's tools as an art program has them (`BarTool`: Select, Pan, Pick, Paint, Erase, Fill, Room, Link, Cables, Pipes) and their options: the target (Tiles, Entities, Decals), the shape (Point, Line, Rectangle, Circle), what Select selects (`SelectTargets`) and its mode (Replace, Add, Subtract). `Toolbox::tool_for` says which session tool a toolbar tool stands for, and `note_tool` goes the other way. Paint at a point is the session's Paint, or Place on entities. Paint's shapes are Line, Rectangle and Circle. Select with Tiles is the Area tool, and without it the Select tool. `key_action` maps the keys. The shapes and select targets are kept in `settings.json` (`ToolOptions`). Tests in `tests/toolbox.rs`. |
+| `editor-core/src/session/tools/toolbar.rs` | 200 | The toolbox on the session: `take_bar_tool`, `set_target` (which takes back what was last in hand for it), `set_shape`, `toggle_select_target`, `set_select_mode`, `set_entity_free`, the tool keys, and saving the options. Every change ends in `set_tool`, which notes the session tool in the toolbox. Tests in `tools/tests/toolbar.rs`. |
+| `editor-core/src/session/tools/tiles.rs` | 420 | Paint, Erase, Rectangle, Fill. Erase in a shape drags a rectangle, line or circle and takes away what the brush is (`erase_down`, `put_shape`). |
 | `editor-core/src/session/tools/shapes.rs` | 190 | Line and Circle. |
 | `editor-core/src/session/tools/floors.rs` | 240 | Laying a tile under new walls. `needs_floor` is the one rule for what gets a tile: the Wall tag, or anchored by default with the Window tag, the CanBuildWindowOnTop component (grilles) or the Door component. The switch, the tile (Plating by default), the Room tool's wall and its Intersection switch, kept per fork in the settings file (`Flooring`, `ForkPlacing`). The Room tool's wall list order (`room_walls`): WallSolid, WallReinforced, the palette's Structures/Walls, the rest, then rock (`is_rock`, using Validate Map's `ALLOWED_WALLS`). Also the faint ghost of the tiles a press would lay. Tests in `tools/tests/floors.rs`. |
 | `editor-core/src/session/tools/room.rs` | 270 | The Room tool: a dragged rectangle that becomes one edit, with the tile in hand inside, the wall tile on the edge, and walls on the edge. `plan_room` decides each cell. With Intersection off, any cell holding a wall (`Prototype::is_wall`) is left alone, so walls never stack and no floor goes under one. With it on, the room joins those it overlaps: walls inside are deleted, edge cells already holding a wall stay, and edge cells on another room's floor stay open. Its ghost (red marks on walls to delete), size label and cancel. Tests in `tools/tests/room.rs`. |
-| `editor-core/src/session/tools/place.rs` | 320 | Placing entities. |
-| `editor-core/src/session/tools/select.rs` | 650 | Entity Select: find, move, turn and delete entities and decals. |
-| `editor-core/src/session/tools/area.rs` | 700 | Area Select: regions of cells. |
+| `editor-core/src/session/tools/place.rs` | 370 | Placing entities, which is Paint at a point on entities. Free placing is the toolbar's option, and Shift does the other for one press (`places_free`). A dragged row fills every cell the cursor crosses and skips a cell that holds the prototype already. |
+| `editor-core/src/session/tools/select.rs` | 650 | Select with Tiles off: find, move, turn and delete entities and decals. The select targets leave out entities or decals, and the mode (`press_mode`) does what Shift and Ctrl do. |
+| `editor-core/src/session/tools/area.rs` | 700 | Select with Tiles on: regions of cells. |
 | `editor-core/src/session/tools/nudge.rs` | 100 | Nudging. The arrow keys move the selected entities and decals one cell along their grid's directions, or one pixel with Shift when nothing is anchored. They also move the area tool's region one cell (`move_region` in `area.rs`). A press is dropped while the engine hasn't answered the last edit yet (`last_edit`, `last_answered`). `arrows_reach_map` is the rule the interface checks before it passes on an arrow key. Tests in `tools/tests/nudge.rs`. |
 | `editor-core/src/session/tools/paste.rs` | 710 | Copy, cut, paste. Escape on the map, and `escape_to`, the rule the interface uses to decide where Escape goes: a menu, the dialogs, a text field or the map. |
 | `editor-core/src/session/tools/prefabs.rs` | 145 | Save as Prefab, the session's list of the prefabs folder, choosing a prefab to stamp, import and delete. |
@@ -89,7 +91,7 @@ All of it is under `native/`. Build one package at a time.
 | `editor-core/src/forks/mod.rs` | 180 | Forks: whether a folder looks like a fork, its name and branch, and `check`, which a fork must pass before it opens. That covers the safety rule (`fingerprint::code_verdict`) and where its pack and textures are. Tests in `tests/forks.rs`, with a small fork in a temporary git checkout that the other fork tests share. |
 | `editor-core/src/forks/popular.rs` | 160 | The popular forks on the start screen (`POPULAR_FORKS`: name, repositories with labels, description, licence, own engine fork, colour, upstream). Also the popular fork a URL points at and the name its download gets, a URL's GitHub owner, and a fork's monogram and colour. Tests in `tests/forks/popular.rs`. |
 | `editor-core/src/forks/avatars.rs` | 70 | GitHub avatars of the fork owners, fetched once with curl into `avatars/` under the user data folder and kept only if they are PNGs. Tests in `tests/forks/avatars.rs`. |
-| `editor-core/src/forks/settings.rs` | 320 | `settings.json` in the user data folder: known forks (with `managed` set for the ones the editor downloaded), recent maps, the last fork, each fork's favourites by its folder (`Favourite`, `set_favourites`), how each fork places walls (`ForkPlacing`, `placing`, `set_placing`), the forks that show the Problems overlay (`problems_shown`), and whether animated sprites move (`animate_sprites`, for every fork). |
+| `editor-core/src/forks/settings.rs` | 320 | `settings.json` in the user data folder: known forks (with `managed` set for the ones the editor downloaded), recent maps, the last fork, each fork's favourites by its folder (`Favourite`, `set_favourites`), how each fork places walls (`ForkPlacing`, `placing`, `set_placing`), the forks that show the Problems overlay (`problems_shown`), whether animated sprites move (`animate_sprites`, for every fork), and the toolbar's options (`tools`, for every fork). |
 | `editor-core/src/forks/download.rs` | 550 | Forks the editor downloads. The forks folder and which folders are in it (`is_in`), and folder names from URLs. Git runs as a child process and its `--progress` output is read into `Progress`. `Stopper` kills git and anything it started. `download` makes a shallow clone with submodules into `<name>.partial` and then moves it into place. `update` fetches, fast-forwards only, and updates submodules. Tests in `tests/forks/download.rs` clone from bare repositories in a temporary folder. |
 | `editor-core/src/forks/fingerprint.rs` | 440 | Fingerprints of a checkout's prototypes, textures and code, from git's hashes, or from its files when it isn't a git checkout. The code means the three Content projects, the fork's `Content.*.Server` and `Content.*.Client` modules, and whatever they refer to (`content_projects`). Also the engine's commit, the one the fork names when its submodule isn't set up (`engine_commit`), the engine side's `code-fingerprint.txt` (`EngineStamp`), and the safety rule (`code_verdict`). |
 | `editor-core/src/forks/engines.rs` | 890 | The engine side built for a fork's code. `choose` decides which engine side a fork opens with: the editor's own, one in the cache by `key`, or a `BuildJob`. `Sources` finds the editor's sources beside it. `build` makes a shared sparse clone of the checkout with its uncommitted code changes, then clones or fetches the engine at its commit with submodules. Then it applies the engine patch units native needs (`Unit`, `native_units`, `apply_units`). A unit the engine already has is skipped. Otherwise the first variant git accepts goes on, and if none does the build is refused, naming the unit and git's message for each variant. It checks the fork's SDK and takes a newer major one when that SDK is missing (`sdk_check`, `rolled_forward`). Then it runs `dotnet publish` into the cache, showing the first errors on failure, and puts the engine's Resources and the stamp beside it. Tests in `tests/forks/engines.rs` use a git "server" in a temporary folder and small engines for the units. An ignored test builds the engine side of the fork that `EDITOR_BUILD_FORK` names. |
@@ -135,11 +137,22 @@ The files of `editor-dioxus/src/`:
 - `canvas.rs`: the map widget, the mouse, and what is drawn over the map, including the air
   overlay's legend (sample tiles as pictures), its room labels and its hover box. The Problems
   overlay's badges go on top of the map's own rectangles, and its box takes the hover box's place.
-- `bars.rs`: the menu, tool and status bars.
-- `placing.rs`: the Placement block under the entity palette (lay a tile under walls, and
-  which tile) and the Room tool's panel with its Intersection switch. A tile or a wall is chosen from a short list that
-  opens under its row, since Blitz has no drop-down lists.
-- `palettes.rs`: the side panel and the palettes. The Favourites tab comes first, each row has
+- `bars.rs`: the menu, tool and status bars. The tool bar has an icon for each toolbar tool,
+  in three groups, and draws the name and key of the one under the mouse, since Blitz has no
+  tooltips.
+- `options.rs`: the options bar under the menu bar, which shows the options of the tool in
+  hand: the target and shape of Paint and Erase, free placing, the decal settings, what Select
+  selects and its mode, the cables and pipes, and a line of help for the rest. `follow_target`
+  turns the palette tab to the target when it changes. `SS14_EDITOR_TOOL` is a developer
+  switch that presses tool keys as the editor opens.
+- `placing.rs`: in the options bar, laying a tile under walls for Paint on entities, and the
+  Room tool's floor, edge tile, wall and join switch. A tile or a wall is chosen from a short
+  list in a box that opens under its button, since Blitz has no drop-down lists.
+- `icons.rs`: the icons, SVG drawings in `assets/icons` (most from Lucide), shown as images in
+  a colour given as they are made. Blitz draws SVG images, and its fonts have no symbols.
+- `theme.rs`: the icon colours. The rest of the theme is the colour names at the top of
+  `local.css`, which take the place of the web editor's.
+- `palettes.rs`: the side panel: the selection, the palettes and the layers. The Favourites tab comes first, each row has
   a star (`FavouriteStar`, shown on hover by `.fav-star` in `local.css`), and
   `SS14_EDITOR_TAB` is a developer switch for the tab it opens on.
 - `selection.rs`, `components.rs`, `links.rs`: the side panels. `components.rs` has the typed
@@ -158,7 +171,8 @@ The files of `editor-dioxus/src/`:
   opens, with the clown from `assets/clown.png`. Blitz takes a widget out of its
   `CustomWidgetAttr` only once, so each showing of the screen makes a new widget.
 - `web.css` is the web editor's built stylesheet, copied over.
-- `assets/` holds the clown and the app icon made from it (credited in `assets/CREDITS.md`).
+- `assets/` holds the clown, the app icon made from it, and the tool icons (credited in
+  `assets/CREDITS.md`).
   `build.rs` gives the icon to the Windows .exe.
 
 ## Checks

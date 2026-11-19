@@ -20,9 +20,9 @@
 //! one. It zooms when neither takes the wheel. A tool's key reaches the session as it goes
 //! down (`key_down`) and as it comes up (`key_up`), once each however long it is held, and
 //! `key_lost` says that a key is not down any more and was not seen to come up. Each asks the
-//! tool in hand in the same way, and `key_down` does so before it looks the key up in
-//! `Tool::ALL`. That is how R turns things with Select, Place or Area in hand, and is the
-//! rectangle tool with any other. Those three take R going down as the beginning of a hold
+//! tool in hand in the same way, and `key_down` does so before it looks the key up with
+//! `crate::toolbox::key_action`. That is how R turns things with Select, Place or Area in
+//! hand, and is Paint's rectangle with any other. Those three take R going down as the beginning of a hold
 //! (`select::Turning`). While the hold lasts the entity tools take the wheel, which turns by
 //! five degrees a notch, and R coming up with the wheel not turned is a quarter turn
 //! (`rotate`). The area tool leaves the wheel to zoom, and R coming up turns its region. The
@@ -58,11 +58,22 @@
 //! row the list is on. A secondary press picks nothing. The interface draws it from
 //! `pick_list`, each row marked as an entity or a tile.
 //!
+//! **The toolbar.** The toolbar offers its own tools (`crate::toolbox::BarTool`), each with
+//! options, and each stands for one of the tools here (`Toolbox::tool_for`). Paint at a point
+//! is Paint, or Place on entities. Paint in a shape is Line, Rectangle or Circle. Erase is
+//! Erase in every shape, and reads its shape at the press (`erase_down`). Select with Tiles is
+//! Area, and without it Select. `toolbar.rs` takes a toolbar tool in hand through `set_tool`,
+//! which notes the tool in the toolbox, so the toolbar shows what is in hand however it came.
+//! The target, what Paint and Erase work on, follows the palette: each choice notes itself
+//! as last in hand for its kind (`chosen`), and setting the target takes that back.
+//!
 //! **The palette.** What a tool puts down is `palette`, the one thing chosen in the palettes.
 //! The choice is made with `choose_tile`, `choose_entity` or `choose_decal`, by the interface
 //! and by a tool alike, and read through `chosen_tile`, `chosen_entity` (the index),
-//! `chosen_prototype` and `chosen_decal`. Each may change the tool, which it does through
-//! `set_tool`. A decal keeps a brush that takes an entity in hand and else takes Paint. The fields `tool` and `palette`
+//! `chosen_prototype` and `chosen_decal`. Each makes its kind the target and may change the
+//! tool, to Paint in its shape (`take_bar_tool`). A tile keeps a tool that puts tiles down. An
+//! entity keeps the eraser, the shapes and the select tool. A decal keeps a brush that takes
+//! an entity. The fields `tool` and `palette`
 //! are private, read with `tool()` and `palette()`. A drag of a brush reads the palette once, at
 //! the press, into a `tiles::Brush` (`brush_for_press`), a tile's id or an entity's index, and
 //! carries it. A change of the palette during the drag changes nothing of it.
@@ -140,12 +151,11 @@
 //! **Facts about a tool.** Each is stated once, as a method of `Tool` whose match names every
 //! tool: `puts_tiles` for where `choose_tile` goes, `keeps_entity_choice` for where
 //! `choose_entity` goes, `brushes_entities` for whether a brush takes an entity chosen, and
-//! `is_entity_tool` for the toolbar's groups.
+//! `is_entity_tool` for whether R held makes the wheel turn.
 //!
 //! **Controls.** `CONTROLS` is the one list of the keys and gestures and what each does. The
-//! interface's list of controls shows it, and the toolbar's tooltips take a tool's row from it
-//! by the tool's key (`ToolEntry::control`). A change to what a key or a gesture does changes
-//! its row as well.
+//! interface's list of controls shows it. A toolbar tool's row is under its key and begins
+//! with its name. A change to what a key or a gesture does changes its row as well.
 //!
 //! **State.** A drag carries its own in its struct. What outlives a drag is one struct in the
 //! tool's file and one field on `Session`, as `place::Placing`, `tiles::Painting` and
@@ -254,7 +264,8 @@
 //! **A new tool** has a file of its own for its methods, the struct its drag carries and its
 //! state struct, which is one field on `Session`, where it has any. Tools of a kind may share a
 //! file and a drag, as Paint and Erase do, and Line and Circle. It adds itself to `Tool` and
-//! `Tool::ALL`, its drag to `Drag`, and an arm to each match on them: `Tool::puts_tiles`,
+//! `Tool::EVERY`, to the toolbar through `BarTool` or a toolbar tool's options and
+//! `Toolbox::tool_for` and `note_tool`, its drag to `Drag`, and an arm to each match on them: `Tool::puts_tiles`,
 //! `Tool::keeps_entity_choice`, `Tool::brushes_entities`, `Tool::is_entity_tool`,
 //! `pointer_down` (one match for each button), `pointer_move`, `pointer_up`, `wheel` (one match
 //! on the drag and one on the tool), `key_down`, `key_up`, `key_lost`, `outlines`,
