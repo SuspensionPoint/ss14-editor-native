@@ -135,7 +135,7 @@ impl Finding {
 
 /// Walls that may stand on any tile, though they have the Wall tag. The web editor's list,
 /// which is the game's `AllowedWalls` in `MapWallFloorTests.cs`.
-const ALLOWED_WALLS: &[&str] = &[
+pub(crate) const ALLOWED_WALLS: &[&str] = &[
     "AsteroidRock",
     "AsteroidRockArtifactFragment",
     "AsteroidRockBananium",

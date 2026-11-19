@@ -162,22 +162,26 @@ pub(crate) fn Collapsible(title: String, children: Element) -> Element {
 #[component]
 pub(crate) fn SidePanel() -> Element {
     let _ = watch();
-    let (tab, selected, laying, tile_search, chosen_tile, tiles, starred_tiles) = with(|editor| {
+    let (tab, selected, laying, rooming, tile_search, chosen_tile, tiles, starred_tiles) = with(|editor| {
         let session = &editor.session;
         let selected = session.doc.is_some() && !(session.selection.is_empty() && session.selected_decals.is_empty());
         let starred: Vec<String> = session.favourites().into_iter().filter(|row| row.favourite.kind == FavouriteKind::Tile).map(|row| row.favourite.id).collect();
-        (editor.tab, selected, session.tool().is_infrastructure_tool(), editor.tile_search.clone(), session.chosen_tile().map(str::to_owned), session.tiles.len(), starred)
+        (editor.tab, selected, session.tool().is_infrastructure_tool(), session.tool() == editor_core::session::Tool::Room, editor.tile_search.clone(), session.chosen_tile().map(str::to_owned), session.tiles.len(), starred)
     });
     let tabs = [(PaletteTab::Tiles, "Tiles"), (PaletteTab::Entities, "Entities"), (PaletteTab::Decals, "Decals"), (PaletteTab::Prefabs, "Prefabs"), (PaletteTab::Grids, "Grids")];
     rsx! {
         div { class: "flex flex-col min-w-[280px] max-w-[400px] w-[20vw] bg-panel border-l border-subtle overflow-hidden",
             // The web editor's order: what is selected while anything is, then the cable and
-            // pipe choices while either tool is in hand, then the palette, then the layers.
+            // pipe choices while either tool is in hand, then the palette, then the layers. The
+            // Room tool's panel goes where the cable and pipe choices do.
             if selected {
                 Collapsible { title: "Selection", crate::selection::SelectionPanel {} }
             }
             if laying {
                 Collapsible { title: "Infrastructure", crate::selection::InfrastructurePanel {} }
+            }
+            if rooming {
+                Collapsible { title: "Room", crate::placing::RoomPanel {} }
             }
             div { class: "flex-1 flex flex-col overflow-hidden",
                 div { class: "flex border-b border-subtle bg-surface",
@@ -631,6 +635,7 @@ fn EntityPalette() -> Element {
                 }
             }
             div { class: "px-2 py-1 text-[10px] text-muted border-t border-subtle", "{count_text}" }
+            crate::placing::WallPlacement {}
         }
         if let Some((x, y, picture, name, more)) = card {
             HoverCard { x, y, picture, name, more }

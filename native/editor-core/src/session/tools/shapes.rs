@@ -122,6 +122,12 @@ impl ShapeDrag {
             Shape::Circle => disc_cells(self.from, radius(self.from, self.to)),
         }
     }
+
+    /// Its grid, its cells and the entity it puts down, if it puts one down.
+    pub(super) fn entity_cells(&self) -> Option<(i32, Vec<(i32, i32)>, usize)> {
+        let Some(Brush::Entity(index)) = self.brush else { return None };
+        Some((self.grid, self.cells(), index))
+    }
 }
 
 impl Session {

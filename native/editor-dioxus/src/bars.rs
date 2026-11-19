@@ -252,7 +252,7 @@ fn ToolButton(tool: Tool, active: bool) -> Element {
 #[component]
 pub(crate) fn StatusBar() -> Element {
     let _ = (watch(), crate::watch_map());
-    let (held, status, zoom, hover, document, selected) = with(|editor| {
+    let (held, status, zoom, hover, document, selected, floor) = with(|editor| {
         let held = editor.session.in_hand().map(|held| {
             let picture = in_hand_picture(editor, &held);
             let hover = match &held {
@@ -270,7 +270,7 @@ pub(crate) fn StatusBar() -> Element {
             format!("{grid}{entities} entities")
         });
         let selected = (!session.selection.is_empty()).then(|| format!("{} selected", session.selection.len()));
-        (held, session.status_line().to_owned(), format!("{:.0}%", session.camera.zoom * 100.0), session.hover_text(), document, selected)
+        (held, session.status_line().to_owned(), format!("{:.0}%", session.camera.zoom * 100.0), session.hover_text(), document, selected, session.floor_note())
     });
     rsx! {
         div { class: "flex items-center h-6 bg-surface border-t border-subtle px-3 text-[10px] text-muted gap-4",
@@ -297,6 +297,10 @@ pub(crate) fn StatusBar() -> Element {
                         if starred { "Remove from favourites" } else { "Add to favourites" }
                     }
                 }
+            }
+            // A press lays a tile under the wall in hand where there is none.
+            if let Some(floor) = floor {
+                span { class: "text-accent", "{floor}" }
             }
             span { "{status}" }
             span { class: "ml-auto" }

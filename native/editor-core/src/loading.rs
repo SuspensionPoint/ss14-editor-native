@@ -362,6 +362,45 @@ impl Bezier {
     }
 }
 
+/// The picture of a fork's steel floor (`FloorSteel`), which the loading screen lays in its
+/// row. Read from the fork's own tile prototypes, since forks keep it in different places:
+/// Space Wizards' master moved it to `Tiles/Basic/Gray/gray.png`. Falls back to the older
+/// `Tiles/steel.png`. None if neither is there, and the screen draws grey squares.
+pub fn steel_tile_picture(fork: &Path) -> Option<std::path::PathBuf> {
+    let resources = fork.join("Resources");
+    let named = sprite_of(&resources.join("Prototypes").join("Tiles"), "FloorSteel")
+        .map(|sprite| resources.join(sprite.trim_start_matches('/')))
+        .filter(|picture| picture.is_file());
+    named.or_else(|| Some(resources.join("Textures").join("Tiles").join("steel.png")).filter(|picture| picture.is_file()))
+}
+
+/// The `sprite:` of the tile prototype with this id, from the YAML files in a folder and the
+/// folders inside it. A plain text read: the engine is not running yet while the screen shows.
+fn sprite_of(folder: &Path, id: &str) -> Option<String> {
+    let mut folders = vec![folder.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                folders.push(path);
+                continue;
+            }
+            if path.extension().is_none_or(|extension| extension != "yml") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            // A prototype starts at "- type:". Its own lines follow until the next one.
+            for block in text.split("\n- ") {
+                let has_id = block.lines().any(|line| line.trim() == format!("id: {id}"));
+                if let Some(sprite) = block.lines().find_map(|line| line.trim().strip_prefix("sprite:")).filter(|_| has_id) {
+                    return Some(sprite.trim().to_owned());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 #[path = "tests/loading.rs"]
 mod tests;

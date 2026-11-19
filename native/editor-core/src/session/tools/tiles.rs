@@ -6,7 +6,7 @@ use super::*;
 const FILL_LIMIT: usize = 50_000;
 
 /// A shape of entities of more cells than this is refused rather than sent.
-const SHAPE_LIMIT: usize = 10_000;
+pub(super) const SHAPE_LIMIT: usize = 10_000;
 
 /// What the tile tools keep from one drag to the next: the tiles drawn ahead of the engine.
 #[derive(Default)]
@@ -31,6 +31,14 @@ impl Painting {
         self.answered_seq = self.answered_seq.max(seq);
         let answered = self.answered_seq;
         self.pending.retain(|tile| tile.seq > answered);
+    }
+
+    /// Draws tiles ahead of the engine's answer to the request of this number: the squares
+    /// of cells that are to become a tile. A tile with no picture known is not drawn ahead.
+    pub(super) fn lay_ahead(&mut self, seq: u64, corners: Vec<[(f32, f32); 4]>, sprite: Option<String>) {
+        if let Some(sprite) = sprite {
+            self.pending.extend(corners.into_iter().map(|corners| PendingTile { seq, corners, sprite: Some(sprite.clone()) }));
+        }
     }
 
     /// Forgets the tiles drawn ahead, as when another map is opened.
@@ -95,6 +103,25 @@ pub(in crate::session) struct RectangleDrag {
     brush: Option<Brush>,
 }
 
+impl RectangleDrag {
+    /// Its grid, its cells and the entity it puts down, if it puts one down.
+    pub(super) fn entity_cells(&self) -> Option<(i32, Vec<(i32, i32)>, usize)> {
+        let Some(Brush::Entity(index)) = self.brush else { return None };
+        Some((self.grid, rectangle_cells(self.from, self.to), index))
+    }
+}
+
+/// The cells of a rectangle from one corner to the other, column by column.
+pub(super) fn rectangle_cells(from: (i32, i32), to: (i32, i32)) -> Vec<(i32, i32)> {
+    let mut cells = Vec::new();
+    for x in from.0.min(to.0)..=from.0.max(to.0) {
+        for y in from.1.min(to.1)..=from.1.max(to.1) {
+            cells.push((x, y));
+        }
+    }
+    cells
+}
+
 /// The cells of a grid that hold an entity of a prototype: a child of the grid that is
 /// inside nothing.
 pub(super) fn cells_holding(doc: &Doc, grid: i32, prototype: &str) -> HashSet<(i32, i32)> {
@@ -138,26 +165,37 @@ impl Session {
     }
 
     /// Asks for an entity of a prototype in the middle of each of these cells of a grid,
-    /// unturned, in the form the place tool sends. A cell with no tile is skipped, as is one
-    /// that already holds an entity of the prototype or is in `placed`. The cells it puts one
-    /// on go into `placed`.
+    /// unturned, in the form the place tool sends. A cell that already holds an entity of the
+    /// prototype or is in `placed` is skipped. So is a cell with no tile, unless the prototype
+    /// needs a floor and laying one is switched on (`floor_for`): then the tile is laid there
+    /// first, in the same edit. The cells it puts one on go into `placed`.
     fn put_entities(&mut self, grid_uid: i32, cells: &[(i32, i32)], prototype: usize, label: &'static str, stroke: Option<u64>, placed: &mut HashSet<(i32, i32)>) {
-        let Some(id) = self.prototypes.get(prototype).map(|prototype| prototype.id.clone()) else { return };
+        let Some(prototype) = self.prototypes.get(prototype) else { return };
+        let (id, floor) = (prototype.id.clone(), self.floor_for(prototype));
         let Some(doc) = self.doc.as_mut() else { return };
         let Some(grid) = doc.grids.iter().find(|grid| grid.uid == grid_uid) else { return };
         doc.active_grid = grid_uid;
         self.grid = (grid.uid, grid.x, grid.y);
 
         let holding = cells_holding(doc, grid_uid, &id);
-        let mut ops = Vec::new();
+        let (mut ops, mut spawns, mut laid) = (Vec::new(), Vec::new(), Vec::new());
         for &cell in cells {
-            if doc.tile_at(grid_uid, cell) == SPACE || holding.contains(&cell) || !placed.insert(cell) {
+            let bare = doc.tile_at(grid_uid, cell) == SPACE;
+            if (bare && floor.is_none()) || holding.contains(&cell) || !placed.insert(cell) {
                 continue;
             }
+            if let (true, Some(tile)) = (bare, &floor) {
+                ops.push(json!({ "kind": "tile", "grid": grid_uid, "x": cell.0, "y": cell.1, "tile": tile }));
+                laid.push(grid.cells_outline(cell, cell));
+            }
             let (x, y) = (cell.0 as f32 + 0.5, cell.1 as f32 + 0.5);
-            ops.push(json!({ "kind": "spawn", "prototype": id, "parent": grid_uid, "x": x, "y": y, "rotation": 0.0 }));
+            spawns.push(json!({ "kind": "spawn", "prototype": id, "parent": grid_uid, "x": x, "y": y, "rotation": 0.0 }));
         }
-        self.edit(ops, label, stroke, false);
+        // The tiles go first, so that no entity is put on a cell with no tile.
+        ops.extend(spawns);
+        let seq = self.edit(ops, label, stroke, false);
+        let sprite = floor.and_then(|tile| self.tile_sprites.get(&tile).cloned().flatten());
+        self.painting.lay_ahead(seq, laid, sprite);
     }
 
     /// Asks for the entities of a prototype on these cells of a grid to be deleted, and leaves
@@ -305,12 +343,7 @@ impl Session {
     pub(super) fn rectangle_up(&mut self, drag: RectangleDrag) {
         let RectangleDrag { grid, from, to, brush } = drag;
         let Some(brush) = brush else { return };
-        let mut cells = Vec::new();
-        for x in from.0.min(to.0)..=from.0.max(to.0) {
-            for y in from.1.min(to.1)..=from.1.max(to.1) {
-                cells.push((x, y));
-            }
-        }
+        let cells = rectangle_cells(from, to);
         self.put_shape(grid, &cells, &brush, ("Rectangle of tiles", "Rectangle of entities", "Rectangle of decals"), "rectangle");
     }
 

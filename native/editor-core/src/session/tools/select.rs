@@ -362,7 +362,7 @@ impl Session {
             Tool::Place => self.placing.turn(if clockwise { -std::f64::consts::FRAC_PI_2 } else { std::f64::consts::FRAC_PI_2 }),
             Tool::Area | Tool::Select if self.pasting.is_live() => self.turn_paste(clockwise),
             Tool::Area => self.turn_region(clockwise),
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => self.rotate_selection(clockwise),
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => self.rotate_selection(clockwise),
         }
     }
 

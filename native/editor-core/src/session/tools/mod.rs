@@ -70,7 +70,12 @@
 //! **Entities from the brushes.** Paint, Erase, Rectangle, Line and Circle work with an entity
 //! chosen as well as a tile. They put one down in the middle of each cell, unturned, as the place tool sends it.
 //! A cell with no tile is skipped, as is a cell that holds an entity of that prototype or that
-//! the same drag has put one on, since the mirror is behind the engine. The eraser deletes
+//! the same drag has put one on, since the mirror is behind the engine. The one exception is
+//! an entity that needs a floor (a wall, window, grille or door, as `floors::needs_floor` says), while
+//! laying a tile under walls is switched on, as it is by default. On a cell with no tile the
+//! tile is laid first, in the same edit, so it is the same step to undo. The place tool does
+//! the same, and puts such an entity on the grid the tile tools would paint where no grid has
+//! a tile. The tile is Plating or the one the mapper picked (`floors.rs`). The eraser deletes
 //! the entities of that prototype on the cells it crosses and leaves the tiles: children of the
 //! grid that are inside nothing. A shape of entities is refused past 10,000 cells. Fill knows
 //! tiles alone.
@@ -108,6 +113,14 @@
 //! and Circle share one drag, `shapes::ShapeDrag`, which says which shape it is. While it is
 //! dragged its cells are filled through `overlay_quads`, the cell pressed is outlined, and so
 //! is a line's last cell.
+//!
+//! **Rooms.** The Room tool drags out a rectangle as Rectangle does (`room.rs`). Let go, it is
+//! one edit with no stroke: the tile in hand inside, the tile laid under walls on the edge, and
+//! the Room tool's wall on each cell of the edge that does not hold it already. It is refused
+//! past 10,000 cells, and with no wall to build with. Escape and a press of the secondary
+//! button during the drag drop it (`cancel_room`). Choosing a wall with the Room tool in hand
+//! makes it the room's wall and keeps the tile in hand, and any wall chosen becomes the room's
+//! wall too.
 //!
 //! **Ghosts.** Before a press, the tool in hand shows half seen through what the press would
 //! put down. The chosen entity's ghost is the engine's picture of it with Place, Paint,
@@ -253,6 +266,7 @@ use super::*;
 mod area;
 mod connections;
 mod decals;
+mod floors;
 mod infra;
 mod link;
 mod look;
@@ -262,6 +276,7 @@ mod pick;
 mod pipes;
 mod place;
 mod prefabs;
+mod room;
 mod select;
 mod shapes;
 #[cfg(test)]
@@ -271,6 +286,8 @@ mod tiles;
 pub(super) use area::Region;
 pub use area::{MenuAction, MenuEntry};
 pub(super) use decals::Decaling;
+pub(super) use floors::Flooring;
+pub use floors::{is_room_wall, needs_floor};
 pub use decals::{decal_colour_bytes, decal_colour_text, DecalField, DecalGroup, DecalSettings, DecalSummary};
 pub use infra::CableKind;
 pub(super) use infra::Laying;
@@ -300,6 +317,7 @@ pub enum Tool {
     Rectangle,
     Line,
     Circle,
+    Room,
     Area,
     Select,
     Place,
@@ -322,16 +340,17 @@ pub struct ToolEntry {
 /// A tool's row is under its key alone, which is how `ToolEntry::control` finds it.
 pub const CONTROLS: &[(&str, &str)] = &[
     ("H", "Pan: drag the map"),
-    ("B", "Paint: paint the chosen tile in every cell the brush crosses. With an entity or decal chosen, it places one in each cell that has a tile. A decal with snap off, or with Shift held, goes exactly where the cursor is"),
+    ("B", "Paint: paint the chosen tile in every cell the brush crosses. With an entity or decal chosen, it places one in each cell that has a tile. Walls, windows, grilles and doors also go where there's no tile, and get a tile laid under them. You can switch that off in the Entities tab. A decal with snap off, or with Shift held, goes exactly where the cursor is"),
     ("E", "Erase: remove tiles in every cell the brush crosses. With an entity or decal chosen, it deletes those of that kind there and leaves the tiles"),
     ("I", "Pick: takes the top entity under the cursor and switches to E-Place, or else the decal with its settings and switches to Paint, or else the bare tile and switches to Paint. Over a stack, the wheel steps through a list of what's there and a click takes the current row"),
     ("G", "Fill: fill the area of the same tile under the cursor, up to 50,000 tiles"),
     ("R", "Rect: drag out a rectangle of the chosen tile, or of the chosen entity or decal one per cell, up to 10,000 cells. With E-Select or E-Place in hand, turns a quarter clockwise (the ghost while pasting). With Select in hand, turns the region a quarter (or the ghost while pasting). With a decal chosen and Paint, Rect, Line or Circle in hand, turns the decal's placement angle a quarter clockwise"),
     ("L", "Line: drag out a line of the chosen tile, or of the chosen entity or decal one per cell, up to 10,000 cells"),
     ("C", "Circle: drag out a filled circle from the cell you press to the cursor's cell, of the chosen tile, or of the chosen entity or decal one per cell, up to 10,000 cells"),
+    ("O", "Room: drag out a room, up to 10,000 cells. The tile in hand goes inside. Every edge cell gets the wall tile and a wall. Doors are up to you. Pick the wall in the Room panel. Right-click or Escape cancels"),
     ("S", "Select: drag out a region of tiles, one box at a time. Drag the region to move it along with everything on it"),
     ("V", "E-Select: select, move, turn and delete entities, and decals where there's no entity"),
-    ("P", "E-Place: place the chosen entity, one per cell as you drag"),
+    ("P", "E-Place: place the chosen entity, one per cell as you drag. A wall, window, grille or door where there's no tile gets a tile laid under it"),
     ("D", "Link: click a device that has links or a device list, then another device. For a list, the second device goes on the list. For links, a window shows the ports of both, the game's defaults first, along with the links the two already have. Shift+click uses a device as a link source even when it also has a list. Right-click a listed device to take it off. Escape stops"),
     ("K", "Cables: drag a path of the chosen cable, one per cell, skipping cells that already have it. Right-drag removes that cable"),
     ("J", "Pipes: drag a path of the chosen pipe, each piece fitted to the cells it joins. Start or end on a pipe to join it. Right-drag removes pipes and refits the ones next to them"),
@@ -372,7 +391,7 @@ impl ToolEntry {
 
 impl Tool {
     /// The tools as the web editor's toolbar has them, in its order.
-    pub const ALL: [ToolEntry; 14] = [
+    pub const ALL: [ToolEntry; 15] = [
         ToolEntry { tool: Tool::Pan, name: "Pan", key: 'H' },
         ToolEntry { tool: Tool::Paint, name: "Paint", key: 'B' },
         ToolEntry { tool: Tool::Erase, name: "Erase", key: 'E' },
@@ -381,6 +400,7 @@ impl Tool {
         ToolEntry { tool: Tool::Rectangle, name: "Rect", key: 'R' },
         ToolEntry { tool: Tool::Line, name: "Line", key: 'L' },
         ToolEntry { tool: Tool::Circle, name: "Circle", key: 'C' },
+        ToolEntry { tool: Tool::Room, name: "Room", key: 'O' },
         ToolEntry { tool: Tool::Area, name: "Select", key: 'S' },
         ToolEntry { tool: Tool::Select, name: "E-Select", key: 'V' },
         ToolEntry { tool: Tool::Place, name: "E-Place", key: 'P' },
@@ -393,7 +413,7 @@ impl Tool {
     pub fn is_entity_tool(self) -> bool {
         match self {
             Tool::Select | Tool::Place | Tool::Link => true,
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Area | Tool::Cable | Tool::Pipe => false,
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Area | Tool::Cable | Tool::Pipe => false,
         }
     }
 
@@ -401,7 +421,7 @@ impl Tool {
     pub fn is_infrastructure_tool(self) -> bool {
         match self {
             Tool::Cable | Tool::Pipe => true,
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Area | Tool::Select | Tool::Place | Tool::Link => false,
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link => false,
         }
     }
 
@@ -410,7 +430,7 @@ impl Tool {
     fn brushes_entities(self) -> bool {
         match self {
             Tool::Paint | Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle => true,
-            Tool::Pan | Tool::Pick | Tool::Fill | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Pan | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
         }
     }
 
@@ -419,14 +439,15 @@ impl Tool {
     fn keeps_entity_choice(self) -> bool {
         match self {
             Tool::Paint | Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Select => true,
-            Tool::Pan | Tool::Pick | Tool::Fill | Tool::Area | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Pan | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
         }
     }
 
     /// Whether the tool puts the chosen tile down. The eraser does not: it takes tiles away.
+    /// The Room tool puts it down inside a room.
     fn puts_tiles(self) -> bool {
         match self {
-            Tool::Paint | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle => true,
+            Tool::Paint | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room => true,
             Tool::Pan | Tool::Erase | Tool::Pick | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
         }
     }
@@ -518,6 +539,7 @@ pub(super) enum Drag {
     AreaBox(area::BoxDrag),
     AreaMove(area::MoveDrag),
     Path(infra::PathDrag),
+    Room(room::RoomDrag),
 }
 
 /// The corners of a box given as (left, bottom, right, top).
@@ -556,7 +578,7 @@ impl Session {
         let taken = match self.tool {
             Tool::Select | Tool::Place | Tool::Area => self.turn_key_down(key, shift),
             Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_turn_key(key, shift),
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => false,
         };
         if taken {
             return true;
@@ -576,7 +598,7 @@ impl Session {
         match self.tool {
             Tool::Select | Tool::Place | Tool::Area => self.turn_key_up(key),
             Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_turn_key_up(key),
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Link | Tool::Cable | Tool::Pipe => {}
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {}
         }
     }
 
@@ -589,7 +611,7 @@ impl Session {
         match self.tool {
             Tool::Select | Tool::Place | Tool::Area => self.turn_key_lost(key),
             Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_turn_key_up(key),
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Link | Tool::Cable | Tool::Pipe => {}
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {}
         }
     }
 
@@ -623,6 +645,7 @@ impl Session {
                 Tool::Rectangle => self.rectangle_down(world),
                 Tool::Line => self.shape_down(world, shapes::Shape::Line),
                 Tool::Circle => self.shape_down(world, shapes::Shape::Circle),
+                Tool::Room => self.room_down(world),
                 Tool::Area if self.pasting.is_live() => self.region_paste_down(world),
                 Tool::Area => self.area_down(world),
                 Tool::Select if self.pasting.is_live() => self.paste_down(world),
@@ -634,6 +657,9 @@ impl Session {
             Button::Secondary => match self.tool {
                 // The tools that take it work on the document.
                 _ if self.doc.is_none() => {}
+                Tool::Room => {
+                    self.cancel_room();
+                }
                 Tool::Area | Tool::Select if self.pasting.is_live() => {
                     self.pasting.end();
                 }
@@ -668,6 +694,7 @@ impl Session {
             Drag::AreaBox(drag) => self.area_box_dragged(world, drag),
             Drag::AreaMove(drag) => self.area_move_dragged(world, drag),
             Drag::Path(drag) => self.path_dragged(world, drag),
+            Drag::Room(drag) => self.room_dragged(world, drag),
         };
     }
 
@@ -682,6 +709,7 @@ impl Session {
             Drag::AreaBox(drag) => self.area_box_up(world, drag),
             Drag::AreaMove(drag) => self.area_move_up(world, drag),
             Drag::Path(drag) => self.path_up(drag),
+            Drag::Room(drag) => self.room_up(drag),
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Place(_) => {}
         }
     }
@@ -709,7 +737,7 @@ impl Session {
     pub fn wheel(&mut self, notches: f32, point: (f32, f32), view: (u32, u32)) {
         let mut taken = match &self.drag {
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Rectangle(_) | Drag::Shape(_) | Drag::Move(_) | Drag::SelectBox(_) | Drag::Place(_) => false,
-            Drag::AreaBox(_) | Drag::AreaMove(_) | Drag::Path(_) => false,
+            Drag::AreaBox(_) | Drag::AreaMove(_) | Drag::Path(_) | Drag::Room(_) => false,
         };
         if !taken {
             taken = match self.tool {
@@ -719,7 +747,7 @@ impl Session {
                 Tool::Place => self.turn_wheel(notches),
                 Tool::Pick => self.pick_wheel(notches, self.world_at(point, view)),
                 Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_wheel(notches),
-                Tool::Pan | Tool::Erase | Tool::Fill | Tool::Area | Tool::Link | Tool::Cable | Tool::Pipe => false,
+                Tool::Pan | Tool::Erase | Tool::Fill | Tool::Room | Tool::Area | Tool::Link | Tool::Cable | Tool::Pipe => false,
             };
         }
         if !taken {
@@ -740,6 +768,7 @@ impl Session {
     pub fn overlay_quads(&mut self) -> (Vec<f32>, Vec<f32>) {
         let mut under = self.painting.quads(&mut self.lists);
         self.tile_ghost(&mut under);
+        self.floor_ghost(&mut under);
 
         let mut over = Vec::new();
         self.connection_overlay(&mut over);
@@ -751,6 +780,7 @@ impl Session {
         self.area_overlay(&mut over);
         self.paste_overlay(&mut over);
         self.path_overlay(&mut over);
+        self.room_overlay(&mut under, &mut over);
         (under, over)
     }
 
@@ -780,6 +810,7 @@ impl Session {
             Drag::Shape(drag) => self.shape_outlines(drag, &mut outlines),
             Drag::SelectBox(drag) => self.select_box_outlines(drag, &mut outlines),
             Drag::AreaBox(drag) => self.area_box_outlines(drag, &mut outlines),
+            Drag::Room(drag) => self.room_outlines(drag, &mut outlines),
             // The region is drawn where it would go, and no cell under the cursor.
             Drag::AreaMove(_) => {}
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Move(_) | Drag::Place(_) | Drag::Path(_) => self.hover_outlines(&mut outlines),
@@ -791,7 +822,7 @@ impl Session {
     fn hover_outlines(&self, outlines: &mut Vec<Outline>) {
         let (Some(world), Some(doc)) = (self.hover, self.doc.as_ref()) else { return };
         match self.tool {
-            Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Area | Tool::Cable | Tool::Pipe => self.tile_hover_outlines(world, doc, outlines),
+            Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Area | Tool::Cable | Tool::Pipe => self.tile_hover_outlines(world, doc, outlines),
             Tool::Place => self.place_hover_outlines(world, doc, outlines),
             // The link tool's outlines do not follow the cursor (`outlines`).
             Tool::Pan | Tool::Select | Tool::Link => {}
@@ -844,6 +875,7 @@ impl Session {
             Drag::Shape(drag) => self.shape_label(drag),
             Drag::AreaBox(drag) => self.area_box_label(drag),
             Drag::Path(drag) => self.path_label(drag),
+            Drag::Room(drag) => self.room_label(drag),
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Move(_) | Drag::SelectBox(_) | Drag::Place(_) | Drag::AreaMove(_) => None,
         }
     }

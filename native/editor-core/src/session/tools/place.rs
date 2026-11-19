@@ -91,13 +91,25 @@ impl Placing {
 impl Session {
     /// Chooses the entity the place tool and the brushes put down, and asks the engine how the
     /// prototype looks from each side. It goes to the place tool, or takes it in hand again,
-    /// unless the tool in hand keeps the choice (`Tool::keeps_entity_choice`).
+    /// unless the tool in hand keeps the choice (`Tool::keeps_entity_choice`). A wall the Room
+    /// tool can build with becomes its wall (`set_room_wall`). With the Room tool in hand such
+    /// a wall is that alone: the tile in hand and the tool stay.
     pub fn choose_entity(&mut self, index: usize) {
+        let wall = self.prototypes.get(index).is_some_and(is_room_wall);
+        if wall {
+            self.set_room_wall(index);
+        }
+        self.hint_answered();
+        if wall && self.tool == Tool::Room {
+            let name = self.prototypes.get(index).map(shown_name).unwrap_or_default();
+            self.set_status(format!("Room walls: {name}"));
+            self.want_previews(&[index]);
+            return;
+        }
         self.palette = Palette::Entity(index);
         if !self.tool.keeps_entity_choice() {
             self.set_tool(Tool::Place);
         }
-        self.hint_answered();
         if !self.placing.previews_turned.contains_key(&index) {
             self.placing.previews_turned.insert(index, false);
             if let Some(prototype) = self.prototypes.get(index) {
@@ -150,13 +162,16 @@ impl Session {
     /// Where the place tool would put the chosen prototype for a cursor at `world`: the
     /// parent (a grid, or the map), the position in the parent's coordinates, and on the map,
     /// and how the parent is turned. With Shift held it is the cursor, unless the prototype is
-    /// anchored by default, which goes on the middle of its cell all the same.
+    /// anchored by default, which goes on the middle of its cell all the same. Off every
+    /// grid's tiles it is the map, except for a prototype that a tile is laid under
+    /// (`floor_for`), which goes on the grid the tile tools would paint.
     pub(super) fn place_target(&self, world: (f32, f32)) -> Option<(i32, (f32, f32), (f32, f32), f32)> {
         let doc = self.doc.as_ref()?;
         let prototype = self.chosen_prototype()?;
         let snaps = if self.held.shift { prototype.anchored } else { prototype.snaps() };
         let snap = |local: (f32, f32)| if snaps { (local.0.floor() + 0.5, local.1.floor() + 0.5) } else { local };
-        Some(match doc.grid_with_tile_at(world) {
+        let floored = || self.floor_for(prototype).and_then(|_| doc.grid_at(world));
+        Some(match doc.grid_with_tile_at(world).or_else(floored) {
             Some(grid) => {
                 let local = snap(grid.to_local(world));
                 (grid.uid, local, grid.to_world(local), grid.rotation)
@@ -168,17 +183,33 @@ impl Session {
         })
     }
 
-    /// Places the chosen prototype for a cursor at `world`, unless `placed` already has its cell.
+    /// Places the chosen prototype for a cursor at `world`, unless `placed` already has its
+    /// cell. On a cell of a grid with no tile it lays the tile `floor_for` gives first, in the
+    /// same edit.
     fn place_at(&mut self, world: (f32, f32), stroke: u64, placed: &mut HashSet<(i32, i32, i32)>) {
         let Some((parent, local, _, _)) = self.place_target(world) else { return };
         let Some(prototype) = self.chosen_prototype() else { return };
+        let cell = (local.0.floor() as i32, local.1.floor() as i32);
         // One to a cell while dragging; a click always places.
-        if !placed.insert((parent, local.0.floor() as i32, local.1.floor() as i32)) {
+        if !placed.insert((parent, cell.0, cell.1)) {
             return;
         }
-        let op = json!({ "kind": "spawn", "prototype": prototype.id, "parent": parent, "x": local.0, "y": local.1, "rotation": self.placing.rotation });
+        let mut ops = Vec::new();
+        let mut laid = None;
+        let doc = self.doc.as_ref().expect("a target is on the open map");
+        if let (Some(tile), Some(grid)) = (self.floor_for(prototype), doc.grid(parent)) {
+            if doc.tile_at(parent, cell) == SPACE {
+                ops.push(json!({ "kind": "tile", "grid": parent, "x": cell.0, "y": cell.1, "tile": tile }));
+                laid = Some((grid.cells_outline(cell, cell), tile));
+            }
+        }
+        ops.push(json!({ "kind": "spawn", "prototype": prototype.id, "parent": parent, "x": local.0, "y": local.1, "rotation": self.placing.rotation }));
         self.last_put = Some(format!("placed {} at ({:.3}, {:.3}) of {parent}, {} held", prototype.id, local.0, local.1, self.held.words()));
-        self.edit(vec![op], "Place entity", Some(stroke), false);
+        let seq = self.edit(ops, "Place entity", Some(stroke), false);
+        if let Some((corners, tile)) = laid {
+            let sprite = self.tile_sprites.get(&tile).cloned().flatten();
+            self.painting.lay_ahead(seq, vec![corners], sprite);
+        }
     }
 
     /// Whether Shift is held and puts the chosen prototype where the cursor is. One that is
@@ -225,7 +256,7 @@ impl Session {
         let brush = match self.tool {
             Tool::Place => false,
             Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => true,
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Area | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => return None,
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => return None,
         };
         if !matches!(self.drag, Drag::None | Drag::Stroke(_) | Drag::Place(_)) {
             return None;
