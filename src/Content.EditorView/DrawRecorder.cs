@@ -79,8 +79,13 @@ public sealed class DrawRecorder : DrawingHandleWorld
 
     public override void DrawTextureRectsUnmodulated(Texture texture, ReadOnlySpan<WorldTextureRect> rects)
     {
+        // Each rectangle keeps its own colour, only the handle's is left out (Clyde.Rendering.cs
+        // DrawTextureBatch with applyModulation off).
         foreach (var rect in rects)
-            DrawTextureRectRegion(texture, rect.Quad, Color.White);
+        {
+            var quad = rect.Quad;
+            Add(texture, quad.BottomLeft, quad.BottomRight, quad.TopRight, quad.TopLeft, rect.Modulate, null, modulated: false);
+        }
     }
 #endif
 
@@ -146,9 +151,10 @@ public sealed class DrawRecorder : DrawingHandleWorld
     /// <summary>
     /// One rectangle: its four corners in world space (bottom-left, bottom-right, top-right,
     /// top-left), tint, texture id, and the part of the texture to show in pixels (left, top,
-    /// right, bottom).
+    /// right, bottom). The tint is the colour given times the handle's own, unless
+    /// <paramref name="modulated"/> is off.
     /// </summary>
-    private void Add(Texture texture, Vector2 bottomLeft, Vector2 bottomRight, Vector2 topRight, Vector2 topLeft, Color? modulate, UIBox2? subRegion)
+    private void Add(Texture texture, Vector2 bottomLeft, Vector2 bottomRight, Vector2 topRight, Vector2 topLeft, Color? modulate, UIBox2? subRegion, bool modulated = true)
     {
         if (!_textures.TryGetId(texture, out var id))
         {
@@ -156,7 +162,7 @@ public sealed class DrawRecorder : DrawingHandleWorld
             return;
         }
 
-        var color = (modulate ?? Color.White) * Modulate;
+        var color = modulated ? (modulate ?? Color.White) * Modulate : modulate ?? Color.White;
         // The engine marks an unshaded layer (one that ignores lighting) by sending its colour
         // as -1 - colour. Lighting is not part of what is recorded, so undo the marker.
         if (color.R < 0 || color.G < 0 || color.B < 0 || color.A < 0)
