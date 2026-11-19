@@ -123,13 +123,14 @@ pub fn decal_colour_text(bytes: [u8; 4]) -> String {
 }
 
 impl Session {
-    /// Chooses the decal the brushes put down, by its prototype's id. A brush that works with
-    /// an entity works with a decal (`Tool::brushes_entities`) and stays in hand. Any other
-    /// tool is put down for the paint tool, as in the web editor.
+    /// Chooses the decal the brushes put down, by its prototype's id, which makes Decals the
+    /// target. A brush that works with an entity works with a decal (`Tool::brushes_entities`)
+    /// and stays in hand. Any other tool is put down for Paint in its shape, as in the web editor.
     pub fn choose_decal(&mut self, id: &str) {
         self.palette = Palette::Decal(id.to_owned());
+        self.chosen();
         if !self.tool.brushes_entities() {
-            self.set_tool(Tool::Paint);
+            self.take_bar_tool(BarTool::Paint);
         }
         self.hint_answered();
     }

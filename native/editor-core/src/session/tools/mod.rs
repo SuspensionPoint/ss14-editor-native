@@ -262,6 +262,7 @@
 //! adds itself to `overlay_quads`. Its key gets a row in `CONTROLS`.
 
 use super::*;
+use crate::toolbox::{BarTool, SelectMode};
 
 mod area;
 mod connections;
@@ -282,6 +283,7 @@ mod shapes;
 #[cfg(test)]
 pub(super) mod tests;
 mod tiles;
+mod toolbar;
 
 pub(super) use area::Region;
 pub use area::{MenuAction, MenuEntry};
@@ -306,6 +308,7 @@ pub(super) use prefabs::Prefabs;
 pub use select::StackList;
 pub(super) use select::{Stepping, Turning};
 pub(super) use tiles::Painting;
+pub(super) use toolbar::Tooling;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
@@ -326,49 +329,39 @@ pub enum Tool {
     Pipe,
 }
 
-/// A tool as the toolbar lists it.
-#[derive(Clone, Copy, Debug)]
-pub struct ToolEntry {
-    pub tool: Tool,
-    /// Its name on its button.
-    pub name: &'static str,
-    /// The key that takes it in hand.
-    pub key: char,
-}
-
 /// Every key and gesture of the editor and what it does, as the list of controls shows them.
 /// A tool's row is under its key alone, which is how `ToolEntry::control` finds it.
 pub const CONTROLS: &[(&str, &str)] = &[
+    ("V", "Select: click or drag a box to select. The options bar says what it selects: entities, decals, or with Tiles a region of cells with everything on them. Drag what's selected to move it. V selects entities and decals"),
+    ("S", "Select with Tiles: drag out a region of cells, one box at a time. Drag the region to move it with everything on it. Right-click it for its menu"),
     ("H", "Pan: drag the map"),
-    ("B", "Paint: paint the chosen tile in every cell the brush crosses. With an entity or decal chosen, it places one in each cell that has a tile. Walls, windows, grilles and doors also go where there's no tile, and get a tile laid under them. You can switch that off in the Entities tab. A decal with snap off, or with Shift held, goes exactly where the cursor is"),
-    ("E", "Erase: remove tiles in every cell the brush crosses. With an entity or decal chosen, it deletes those of that kind there and leaves the tiles"),
-    ("I", "Pick: takes the top entity under the cursor and switches to E-Place, or else the decal with its settings and switches to Paint, or else the bare tile and switches to Paint. Over a stack, the wheel steps through a list of what's there and a click takes the current row"),
-    ("G", "Fill: fill the area of the same tile under the cursor, up to 50,000 tiles"),
-    ("R", "Rect: drag out a rectangle of the chosen tile, or of the chosen entity or decal one per cell, up to 10,000 cells. With E-Select or E-Place in hand, turns a quarter clockwise (the ghost while pasting). With Select in hand, turns the region a quarter (or the ghost while pasting). With a decal chosen and Paint, Rect, Line or Circle in hand, turns the decal's placement angle a quarter clockwise"),
-    ("L", "Line: drag out a line of the chosen tile, or of the chosen entity or decal one per cell, up to 10,000 cells"),
-    ("C", "Circle: drag out a filled circle from the cell you press to the cursor's cell, of the chosen tile, or of the chosen entity or decal one per cell, up to 10,000 cells"),
-    ("O", "Room: drag out a room, up to 10,000 cells. The tile in hand goes inside. Every edge cell gets the wall tile and a wall. Doors are up to you. Pick the wall in the Room panel. Right-click or Escape cancels"),
-    ("S", "Select: drag out a region of tiles, one box at a time. Drag the region to move it along with everything on it"),
-    ("V", "E-Select: select, move, turn and delete entities, and decals where there's no entity"),
-    ("P", "E-Place: place the chosen entity, one per cell as you drag. A wall, window, grille or door where there's no tile gets a tile laid under it"),
-    ("D", "Link: click a device that has links or a device list, then another device. For a list, the second device goes on the list. For links, a window shows the ports of both, the game's defaults first, along with the links the two already have. Shift+click uses a device as a link source even when it also has a list. Right-click a listed device to take it off. Escape stops"),
+    ("I", "Pick: takes what's under the cursor into the palette, top first: an entity, then a decal with its settings, then the tile. The target follows it. Over a stack, the wheel steps through what's there and a click takes that row"),
+    ("B", "Paint: puts the chosen tile, entity or decal down in the shape the options bar says. At a point, tiles and decals go on each cell you drag over, and entities go one per cell, turned as R turned them. Walls, windows, grilles and doors also go where there's no tile and get a tile laid under them. You can switch that off in the options bar"),
+    ("P", "Paint entities at a point: places the chosen entity, one per cell as you drag"),
+    ("E", "Erase: removes tiles in the shape the options bar says. With an entity or decal chosen it removes those of that kind and leaves the tiles"),
+    ("G", "Fill: fills the area of the same tile under the cursor, up to 50,000 tiles"),
+    ("R", "Paint a rectangle: drag it out, up to 10,000 cells of entities or decals. With something to turn in hand, R turns it instead: a quarter clockwise for the selection, the entity Paint places, the region or the paste ghost, and the placement angle of a decal"),
+    ("L", "Paint a line: drag it out, up to 10,000 cells of entities or decals"),
+    ("C", "Paint a circle: drag out a filled circle from the cell you press to the cursor's cell, up to 10,000 cells of entities or decals"),
+    ("O", "Room: drag out a room, up to 10,000 cells. The tile in hand goes inside. Every edge cell gets the edge tile and a wall. Doors are up to you. Pick the wall in the options bar. Right-click or Escape cancels"),
+    ("D", "Link: click a device that has links or a device list, then another device. For a list, the second device goes on the list. For links, a window shows the ports of both, the game's defaults first, with the links the two already have. Shift+click uses a device as a link source even when it also has a list. Right-click a listed device to take it off. Escape stops"),
     ("K", "Cables: drag a path of the chosen cable, one per cell, skipping cells that already have it. Right-drag removes that cable"),
     ("J", "Pipes: drag a path of the chosen pipe, each piece fitted to the cells it joins. Start or end on a pipe to join it. Right-drag removes pipes and refits the ones next to them"),
-    ("Shift+R", "With E-Select, E-Place or Select in hand, or a decal chosen, turns a quarter the other way"),
-    ("R held, wheel", "With E-Select or E-Place in hand, turns five degrees per notch. With a decal chosen and a brush in hand, turns its placement angle the same way"),
-    ("Shift+click", "E-Place: place exactly at the cursor. E-Select: add an entity, or take a selected one out. Pasting: stamp with the middle of the ghost's first cell exactly on the cursor"),
-    ("Shift+drag", "E-Select: move unanchored things exactly with the cursor, or drag a box that adds to the selection. Select: drag a box that adds to the region"),
-    ("Ctrl+click, Ctrl+drag", "E-Select: remove an entity, or a box of them, from the selection. Select: remove a box from the region"),
-    ("Right-click", "E-Select: clear the selection, or close the wheel's list. Pasting: stop pasting. Select: on the region, open its menu, and off it, clear the region. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
-    ("Wheel", "Zoom. With E-Select and one entity selected, over it where others overlap, step through them. With Pick, where two or more things could be picked, step through them"),
+    ("Shift+R", "Turns a quarter the other way, where R turns"),
+    ("R held, wheel", "With Select, or Paint placing an entity, turns five degrees per notch. With a decal chosen and Paint in hand, turns its placement angle the same way"),
+    ("Shift+click", "Paint on entities: place where the cursor is, or on the cell when Free is on. Select: add to the selection, or take a selected one out. Pasting: stamp with the middle of the ghost's first cell on the cursor"),
+    ("Shift+drag", "Select: move unanchored things exactly with the cursor, or drag a box that adds to the selection or the region. The Add mode in the options bar does the same"),
+    ("Ctrl+click, Ctrl+drag", "Select: remove an entity, or a box of them, from the selection, or a box from the region. The Subtract mode in the options bar does the same"),
+    ("Right-click", "Select: clear the selection or close the wheel's list. On a region, open its menu, and off it, clear the region. Pasting: stop pasting. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
+    ("Wheel", "Zoom. With Select and one entity selected, over it where others overlap, step through them. With Pick, where two or more things could be picked, step through them"),
     ("Middle drag, Space+drag", "Pan with any tool"),
-    ("Arrow keys", "E-Select: move the selected entities and decals one cell along the grid's own axes, one undo step per press. Select: move the region one cell with its tiles, decals, air and everything on it. Hold to repeat"),
-    ("Shift+Arrow keys", "E-Select: move one pixel (1/32 of a cell) when nothing selected is anchored. If anything is anchored, one cell"),
-    ("Delete, Backspace", "Delete the selection. With Select in hand and a region, delete the region and everything on it"),
+    ("Arrow keys", "Select: move the selected entities and decals one cell along the grid's own axes, one undo step per press. With a region, move it one cell with its tiles, decals, air and everything on it. Hold to repeat"),
+    ("Shift+Arrow keys", "Select: move one pixel (1/32 of a cell) when nothing selected is anchored. If anything is anchored, one cell"),
+    ("Delete, Backspace", "Delete the selection. With a region, delete the region and everything on it"),
     ("Escape", "Close the region's menu, or else stop linking, or else stop pasting, or else clear the selection and the region, or close a dialog. In a side panel text field, only the field gets it"),
-    ("Ctrl+C", "Copy the selected entities and what they hold. With Select in hand and a region, copy the region with its tiles, decals and everything on it"),
+    ("Ctrl+C", "Copy the selected entities and what they hold. With a region, copy the region with its tiles, decals and everything on it"),
     ("Ctrl+X", "Cut: copy the selected entities, or the region, then delete them in one step"),
-    ("Ctrl+V", "Paste: with E-Select in hand for entities, or Select for a region, a ghost of the copy follows the cursor by whole cells. Each click stamps it as one step, and you can keep pasting"),
+    ("Ctrl+V", "Paste: a ghost of the copy follows the cursor by whole cells, with Select in hand. Each click stamps it as one step, and you can keep pasting"),
     ("1 to 9", "Choose one of the first nine favourites, numbered on the rows of the Favourites tab (the star). The star on a palette row, or next to what's in hand on the status bar, adds or removes a favourite"),
     ("F", "Fit the map to the window"),
     ("Ctrl+Z", "Undo"),
@@ -381,35 +374,28 @@ pub const CONTROLS: &[(&str, &str)] = &[
     ("?", "This list of controls"),
 ];
 
-impl ToolEntry {
-    /// What the tool does, from its row of [`CONTROLS`].
-    pub fn control(self) -> Option<&'static str> {
-        let key = self.key.to_string();
-        CONTROLS.iter().find(|(keys, _)| *keys == key).map(|(_, does)| *does)
-    }
-}
-
 impl Tool {
-    /// The tools as the web editor's toolbar has them, in its order.
-    pub const ALL: [ToolEntry; 15] = [
-        ToolEntry { tool: Tool::Pan, name: "Pan", key: 'H' },
-        ToolEntry { tool: Tool::Paint, name: "Paint", key: 'B' },
-        ToolEntry { tool: Tool::Erase, name: "Erase", key: 'E' },
-        ToolEntry { tool: Tool::Pick, name: "Pick", key: 'I' },
-        ToolEntry { tool: Tool::Fill, name: "Fill", key: 'G' },
-        ToolEntry { tool: Tool::Rectangle, name: "Rect", key: 'R' },
-        ToolEntry { tool: Tool::Line, name: "Line", key: 'L' },
-        ToolEntry { tool: Tool::Circle, name: "Circle", key: 'C' },
-        ToolEntry { tool: Tool::Room, name: "Room", key: 'O' },
-        ToolEntry { tool: Tool::Area, name: "Select", key: 'S' },
-        ToolEntry { tool: Tool::Select, name: "E-Select", key: 'V' },
-        ToolEntry { tool: Tool::Place, name: "E-Place", key: 'P' },
-        ToolEntry { tool: Tool::Link, name: "Link", key: 'D' },
-        ToolEntry { tool: Tool::Cable, name: "Cables", key: 'K' },
-        ToolEntry { tool: Tool::Pipe, name: "Pipes", key: 'J' },
+    /// Every tool, for what goes through them all. The toolbar offers them through its own
+    /// tools (`crate::toolbox`).
+    pub const EVERY: [Tool; 15] = [
+        Tool::Pan,
+        Tool::Paint,
+        Tool::Erase,
+        Tool::Pick,
+        Tool::Fill,
+        Tool::Rectangle,
+        Tool::Line,
+        Tool::Circle,
+        Tool::Room,
+        Tool::Area,
+        Tool::Select,
+        Tool::Place,
+        Tool::Link,
+        Tool::Cable,
+        Tool::Pipe,
     ];
 
-    /// Whether the tool works on entities. The toolbar lists those apart from the rest.
+    /// Whether the tool works on entities: it selects, places or links them.
     pub fn is_entity_tool(self) -> bool {
         match self {
             Tool::Select | Tool::Place | Tool::Link => true,
@@ -417,7 +403,7 @@ impl Tool {
         }
     }
 
-    /// Whether the tool lays cables or pipes. The toolbar lists those last, apart from the rest.
+    /// Whether the tool lays cables or pipes.
     pub fn is_infrastructure_tool(self) -> bool {
         match self {
             Tool::Cable | Tool::Pipe => true,
@@ -434,12 +420,13 @@ impl Tool {
         }
     }
 
-    /// Whether the tool stays in hand when an entity is chosen: a brush that works with one,
-    /// and the select tool. Any other is put down for the place tool.
+    /// Whether the tool stays in hand when an entity is chosen: the eraser and the shapes, which
+    /// work with one, and the select tool. Any other is put down for Paint in its shape, which
+    /// at a point is the place tool. The place tool is taken in hand again.
     fn keeps_entity_choice(self) -> bool {
         match self {
-            Tool::Paint | Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Select => true,
-            Tool::Pan | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Select => true,
+            Tool::Pan | Tool::Paint | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
         }
     }
 
@@ -458,6 +445,7 @@ impl Tool {
 pub(super) enum Hint {
     Tile,
     Entity,
+    Decal,
 }
 
 impl Hint {
@@ -466,6 +454,7 @@ impl Hint {
         match self {
             Hint::Tile => "Choose a tile to paint",
             Hint::Entity => "Choose an entity to place",
+            Hint::Decal => "Choose a decal to place",
         }
     }
 }
@@ -560,6 +549,7 @@ impl Session {
             self.linking.end();
         }
         self.tool = tool;
+        self.tool_taken(tool);
         self.drag = Drag::None;
         self.turning.end();
         self.decal_turn_key_up('R');
@@ -583,9 +573,9 @@ impl Session {
         if taken {
             return true;
         }
-        match Tool::ALL.iter().find(|entry| entry.key == key) {
-            Some(entry) => {
-                self.set_tool(entry.tool);
+        match crate::toolbox::key_action(key) {
+            Some(action) => {
+                self.tool_key(action);
                 true
             }
             None => false,
@@ -639,7 +629,8 @@ impl Session {
                 Tool::Pan => self.drag = Drag::Pan { last: point },
                 // Every other tool works on the document.
                 _ if self.doc.is_none() => {}
-                Tool::Paint | Tool::Erase => self.stroke_down(world),
+                Tool::Paint => self.stroke_down(world),
+                Tool::Erase => self.erase_down(world),
                 Tool::Pick => self.pick_down(world),
                 Tool::Fill => self.fill_down(world),
                 Tool::Rectangle => self.rectangle_down(world),

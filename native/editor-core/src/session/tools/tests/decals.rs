@@ -124,7 +124,7 @@ fn the_scene_with_decals_puts_them_in_the_mirror() {
 
 #[test]
 fn choosing_a_decal_keeps_a_brush_and_takes_paint_from_any_other_tool() {
-    for ToolEntry { tool, .. } in Tool::ALL {
+    for tool in Tool::EVERY {
         let (mut session, _engine) = with_decals();
         session.set_tool(tool);
         session.choose_decal("Arrows");
@@ -344,7 +344,7 @@ fn the_ghost_of_the_chosen_decal_is_where_a_press_would_put_it() {
 
 #[test]
 fn only_the_tools_that_put_a_decal_down_show_its_ghost() {
-    for ToolEntry { tool, .. } in Tool::ALL {
+    for tool in Tool::EVERY {
         let (mut session, _engine) = with_decals();
         session.choose_decal("Arrows");
         session.set_tool(tool);

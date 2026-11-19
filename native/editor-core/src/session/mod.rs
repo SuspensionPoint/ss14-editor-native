@@ -55,9 +55,9 @@ pub use palettes::{shown_name, InHand};
 pub use problems::PLATING;
 pub use tools::{
     arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MenuAction, MenuEntry, Outline,
-    OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, ToolEntry, CONTROLS, PIPE_COLOURS,
+    OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, CONTROLS, PIPE_COLOURS,
 };
-use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Turning};
+use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Tooling, Turning};
 
 /// Where a session's pack and textures come from.
 enum Content {
@@ -287,6 +287,8 @@ pub struct Session {
     /// Whether a tile is laid under new walls and which, and the Room tool's wall, kept in
     /// the settings file under the fork.
     flooring: Flooring,
+    /// The toolbar's target, options and select mode, and the settings file they are kept in.
+    tooling: Tooling,
     /// Selected entities, by uid.
     pub selection: Vec<i32>,
     /// Selected decals, by their grid's uid and their id on it. The select tool selects them
@@ -448,6 +450,7 @@ impl Session {
         session.problems = problems::Problems::load(crate::forks::settings::Settings::file(), &fork);
         session.animate = animate::Animate::load(crate::forks::settings::Settings::file());
         session.flooring = Flooring::load(crate::forks::settings::Settings::file(), &fork);
+        session.tooling = Tooling::load(crate::forks::settings::Settings::file());
         std::thread::Builder::new()
             .name("engine".into())
             .spawn(move || {
@@ -498,6 +501,7 @@ impl Session {
             palettes: palettes::Palettes::default(),
             favourites: favourites::Favourites::default(),
             flooring: Flooring::default(),
+            tooling: Tooling::default(),
             selection: Vec::new(),
             selected_decals: Vec::new(),
             details: None,
@@ -730,6 +734,7 @@ impl Session {
                         "Engine ready (document kernel {document_kernel_ms} ms, view kernel {view_kernel_ms} ms, warm-up {warm_up_ms} ms). Opening the map"
                     ));
                     self.palette = tiles.iter().find(|t| t.id == "FloorSteel").or(tiles.first()).map_or(Palette::None, |t| Palette::Tile(t.id.clone()));
+                    self.chosen();
                     self.tile_sprites = tiles.iter().map(|tile| (tile.id.clone(), tile.sprite.clone())).collect();
                     self.tiles = tiles;
                     self.set_prototypes(prototypes);

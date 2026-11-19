@@ -507,11 +507,15 @@ impl Session {
         // The entity the list is on, while it is the whole selection.
         let stepped = self.stepping.stack.take().map(|stack| stack.entries[stack.current]).filter(|&uid| self.selection == [uid]);
         let (under, stack) = if stepped.is_some() { self.stack_at(world) } else { (self.entities_at(world), Vec::new()) };
-        let entity = stepped.filter(|uid| stack.contains(uid)).or(under.first().copied());
-        let decal = if entity.is_none() { self.decals_at(world).first().copied() } else { None };
+        let targets = self.select_targets();
+        let entity = stepped.filter(|uid| stack.contains(uid)).or(under.first().copied()).filter(|_| targets.entities);
+        let decal = if entity.is_none() && targets.decals { self.decals_at(world).first().copied() } else { None };
+        // Shift adds and Ctrl takes away, as the toolbar's mode does.
+        let mode = self.press_mode();
+        let adds = mode == SelectMode::Add;
         match (entity, decal) {
-            // Ctrl comes first, so that it wins over Shift.
-            (under, decal) if self.held.ctrl => {
+            // Subtract comes first, so that Ctrl wins over Shift.
+            (under, decal) if mode == SelectMode::Subtract => {
                 if let Some(uid) = under {
                     self.selection.retain(|&selected| selected != uid);
                 }
@@ -520,20 +524,20 @@ impl Session {
                 }
                 self.drag = Drag::SelectBox(BoxDrag { from: world, to: world, mode: BoxMode::TakeAway });
             }
-            (Some(uid), _) if self.held.shift && !self.selection.contains(&uid) => self.selection.push(uid),
+            (Some(uid), _) if adds && !self.selection.contains(&uid) => self.selection.push(uid),
             (Some(uid), _) => {
                 let selected = self.selection.contains(&uid);
-                let takes_out = (self.held.shift && selected).then_some(uid);
+                let takes_out = (adds && selected).then_some(uid);
                 if !selected {
                     self.selection = vec![uid];
                     self.selected_decals.clear();
                 }
                 self.begin_move(world, point, takes_out, None);
             }
-            (None, Some(key)) if self.held.shift && !self.selected_decals.contains(&key) => self.selected_decals.push(key),
+            (None, Some(key)) if adds && !self.selected_decals.contains(&key) => self.selected_decals.push(key),
             (None, Some(key)) => {
                 let selected = self.selected_decals.contains(&key);
-                let takes_out = (self.held.shift && selected).then_some(key);
+                let takes_out = (adds && selected).then_some(key);
                 if !selected {
                     self.selection.clear();
                     self.selected_decals = vec![key];
@@ -541,7 +545,7 @@ impl Session {
                 self.begin_move(world, point, None, takes_out);
             }
             (None, None) => {
-                let mode = if self.held.shift { BoxMode::Add } else { BoxMode::Replace };
+                let mode = if adds { BoxMode::Add } else { BoxMode::Replace };
                 self.drag = Drag::SelectBox(BoxDrag { from: world, to: world, mode });
             }
         }
@@ -612,7 +616,10 @@ impl Session {
     /// under it.
     pub(super) fn select_box_up(&mut self, world: (f32, f32), drag: BoxDrag) {
         let BoxDrag { from, mode, .. } = drag;
-        let (found, decals) = if from == world { (Vec::new(), Vec::new()) } else { (self.entities_in(from, world), self.decals_in(from, world)) };
+        let targets = self.select_targets();
+        let (mut found, mut decals) = if from == world { (Vec::new(), Vec::new()) } else { (self.entities_in(from, world), self.decals_in(from, world)) };
+        found.retain(|_| targets.entities);
+        decals.retain(|_| targets.decals);
         match mode {
             BoxMode::Replace => (self.selection, self.selected_decals) = (found, decals),
             BoxMode::Add => {

@@ -3,19 +3,11 @@
 use super::*;
 
 #[test]
-fn no_two_tools_share_a_key() {
-    let mut keys: Vec<char> = Tool::ALL.iter().map(|entry| entry.key).collect();
-    keys.sort_unstable();
-    keys.dedup();
-    assert_eq!(keys.len(), Tool::ALL.len());
-}
-
-#[test]
 fn a_secondary_press_does_nothing_with_any_tool_but_select() {
     // The select tool clears the selection with it, which its own tests cover. The area tool
     // clears its region, and has none here. The cable and pipe tools remove their own kind
     // along the drag, and there is none here either.
-    for ToolEntry { tool, .. } in Tool::ALL.into_iter().filter(|entry| entry.tool != Tool::Select) {
+    for tool in Tool::EVERY.into_iter().filter(|&tool| tool != Tool::Select) {
         let (mut session, engine) = holding(tool);
         let palette = session.palette().clone();
         let view = (session.camera.x, session.camera.y, session.camera.zoom);
@@ -36,7 +28,7 @@ fn a_secondary_press_does_nothing_with_any_tool_but_select() {
 fn a_drag_ends_with_nothing_more_asked_when_the_pointer_is_lost() {
     // Pressed on the chair, and on empty floor where the select tool begins a box.
     for pressed in [(1.5, 1.5), (0.5, 4.5)] {
-        for ToolEntry { tool, .. } in Tool::ALL {
+        for tool in Tool::EVERY {
             let (mut session, engine) = holding(tool);
             session.pointer_down(at(&session, pressed), VIEW, Button::Primary);
             session.pointer_move(at(&session, (pressed.0 + 1.0, pressed.1)), VIEW);
@@ -62,7 +54,7 @@ fn a_drag_ends_with_nothing_more_asked_when_the_pointer_is_lost() {
 fn changing_the_tool_ends_a_drag() {
     // Pressed on the chair, and on empty floor where the select tool begins a box.
     for pressed in [(1.5, 1.5), (0.5, 4.5)] {
-        for ToolEntry { tool, .. } in Tool::ALL {
+        for tool in Tool::EVERY {
             let (mut session, engine) = holding(tool);
             session.pointer_down(at(&session, pressed), VIEW, Button::Primary);
             session.pointer_move(at(&session, (pressed.0 + 1.0, pressed.1)), VIEW);
@@ -93,7 +85,7 @@ fn changing_the_tool_ends_a_drag() {
 
 #[test]
 fn r_turns_with_an_entity_tool_and_chooses_the_rectangle_otherwise() {
-    for ToolEntry { tool, .. } in Tool::ALL {
+    for tool in Tool::EVERY {
         let (mut session, engine) = holding(tool);
         // The key is taken either way as it goes down, and nothing is asked for yet. Only a
         // tool that does not turn things gives way to the rectangle tool. The link tool is an
@@ -183,23 +175,21 @@ fn a_hint_stands_over_the_status_until_it_is_answered_or_a_message_takes_its_pla
 
 #[test]
 fn the_controls_list_names_every_tool_key() {
-    for entry in Tool::ALL {
-        let does = entry.control().unwrap_or_else(|| panic!("no row for {}", entry.key));
-        assert!(does.contains(entry.name), "{}: {does}", entry.key);
+    // A toolbar tool's row is under its key, and begins with its name.
+    for tool in crate::toolbox::BarTool::ALL {
+        let key = tool.key().to_string();
+        let does = CONTROLS.iter().find(|(keys, _)| *keys == key).map(|(_, does)| *does).unwrap_or_else(|| panic!("no row for {key}"));
+        assert!(does.starts_with(tool.name()), "{key}: {does}");
+    }
+    // Every other tool key has a row of its own too.
+    for key in crate::toolbox::TOOL_KEYS {
+        assert!(CONTROLS.iter().any(|(keys, _)| *keys == key.to_string()), "no row for {key}");
     }
     // Each row is there once.
     let mut keys: Vec<&str> = CONTROLS.iter().map(|(keys, _)| *keys).collect();
     keys.sort_unstable();
     keys.dedup();
     assert_eq!(keys.len(), CONTROLS.len());
-}
-
-#[test]
-fn the_toolbar_lists_the_entity_tools_and_then_the_cable_and_pipe_tools_last() {
-    let entity_tools: Vec<bool> = Tool::ALL.iter().map(|entry| entry.tool.is_entity_tool()).collect();
-    assert_eq!(entity_tools, [false, false, false, false, false, false, false, false, false, false, true, true, true, false, false]);
-    let laying_tools: Vec<bool> = Tool::ALL.iter().map(|entry| entry.tool.is_infrastructure_tool()).collect();
-    assert_eq!(laying_tools, [false, false, false, false, false, false, false, false, false, false, false, false, false, true, true]);
 }
 
 #[test]
@@ -215,9 +205,10 @@ fn a_move_is_coalesced_and_a_stroke_is_not() {
 
     // Each edit of a stroke of the brush or the eraser, or of a row of the place tool, sets
     // something of its own. None may be passed over.
-    for (tool, label) in [(Tool::Paint, "Paint tiles"), (Tool::Erase, "Erase tiles"), (Tool::Place, "Place entity")] {
+    // The place tool puts one on the cell between as well, which the cursor jumped over.
+    for (tool, label, count) in [(Tool::Paint, "Paint tiles", 2), (Tool::Erase, "Erase tiles", 2), (Tool::Place, "Place entity", 3)] {
         let (mut session, engine) = holding(tool);
         drag(&mut session, (0, 4), (2, 4));
-        assert_eq!(coalesced(&engine), [(label, false); 2], "{tool:?}");
+        assert_eq!(coalesced(&engine), vec![(label, false); count], "{tool:?}");
     }
 }

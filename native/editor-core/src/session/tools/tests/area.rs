@@ -643,7 +643,7 @@ fn deleting_a_region_is_one_edit_with_no_stroke_and_drops_the_region() {
 
 #[test]
 fn delete_with_another_tool_leaves_the_region_s_cells_alone() {
-    for tool in Tool::ALL.map(|entry| entry.tool) {
+    for tool in Tool::EVERY {
         if tool == Tool::Area {
             continue;
         }

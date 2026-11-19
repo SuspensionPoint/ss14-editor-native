@@ -101,12 +101,15 @@ pub(in crate::session) struct RectangleDrag {
     to: (i32, i32),
     /// None when nothing it can put down was chosen at the press. It sets nothing then.
     brush: Option<Brush>,
+    /// Whether it is the eraser's, which takes away what the brush is.
+    erase: bool,
 }
 
 impl RectangleDrag {
     /// Its grid, its cells and the entity it puts down, if it puts one down.
     pub(super) fn entity_cells(&self) -> Option<(i32, Vec<(i32, i32)>, usize)> {
-        let Some(Brush::Entity(index)) = self.brush else { return None };
+        let (Some(Brush::Entity(index)), false) = (&self.brush, self.erase) else { return None };
+        let index = *index;
         Some((self.grid, rectangle_cells(self.from, self.to), index))
     }
 }
@@ -215,13 +218,20 @@ impl Session {
         self.edit(ops, label, stroke, false);
     }
 
-    /// Puts the brush down on cells of a grid as one edit with no stroke, for a shape. A
-    /// shape of entities of more than `SHAPE_LIMIT` cells is refused, with a line on the status
-    /// bar that names the shape.
-    pub(super) fn put_shape(&mut self, grid: i32, cells: &[(i32, i32)], brush: &Brush, labels: (&'static str, &'static str, &'static str), shape: &str) {
+    /// Puts the brush down on cells of a grid as one edit with no stroke, for a shape, or takes
+    /// it away for the eraser: the tiles, or the entities or decals of the brush's prototype.
+    /// A shape of entities or decals of more than `SHAPE_LIMIT` cells is refused, with a line
+    /// on the status bar that names the shape.
+    pub(super) fn put_shape(&mut self, grid: i32, cells: &[(i32, i32)], brush: &Brush, labels: (&'static str, &'static str, &'static str), shape: &str, erase: bool) {
         match brush {
+            Brush::Tile(tile) if erase => self.set_cells(grid, cells, tile, "Erase tiles", None),
             Brush::Tile(tile) => self.set_cells(grid, cells, tile, labels.0, None),
-            Brush::Entity(_) | Brush::Decal(_) if cells.len() > SHAPE_LIMIT => self.set_status(format!("Not placed: the {shape} has more than {} cells", thousands(SHAPE_LIMIT))),
+            Brush::Entity(_) | Brush::Decal(_) if cells.len() > SHAPE_LIMIT => {
+                let not = if erase { "Not erased" } else { "Not placed" };
+                self.set_status(format!("{not}: the {shape} has more than {} cells", thousands(SHAPE_LIMIT)));
+            }
+            Brush::Entity(prototype) if erase => self.delete_entities_on(grid, cells, *prototype, "Erase entities", None),
+            Brush::Decal(id) if erase => self.delete_decals_on(grid, cells, id, "Erase decals", None),
             Brush::Entity(prototype) => self.put_entities(grid, cells, *prototype, labels.1, None, &mut HashSet::new()),
             Brush::Decal(id) => self.put_decals(grid, cells, id, labels.2, None, &mut HashSet::new()),
         }
@@ -233,12 +243,13 @@ impl Session {
         Some((grid.uid, grid.cell_at(world)))
     }
 
-    /// Chooses the tile the tile tools put down, and goes to the paint tool unless a tool that
-    /// puts tiles down is in hand already.
+    /// Chooses the tile the tile tools put down, which makes Tiles the target, and goes to Paint
+    /// in its shape unless a tool that puts tiles down is in hand already.
     pub fn choose_tile(&mut self, id: &str) {
         self.palette = Palette::Tile(id.to_owned());
+        self.chosen();
         if !self.tool.puts_tiles() {
-            self.set_tool(Tool::Paint);
+            self.take_bar_tool(BarTool::Paint);
         }
         self.hint_answered();
     }
@@ -256,7 +267,12 @@ impl Session {
             Palette::None | Palette::Entity(_) | Palette::Decal(_) => None,
         };
         if brush.is_none() {
-            self.hint = Some(Hint::Tile);
+            // Paint and Erase ask for what their target is, Fill for a tile.
+            self.hint = Some(match (self.tool, self.target()) {
+                (Tool::Fill, _) | (_, crate::toolbox::Target::Tiles) => Hint::Tile,
+                (_, crate::toolbox::Target::Entities) => Hint::Entity,
+                (_, crate::toolbox::Target::Decals) => Hint::Decal,
+            });
         }
         brush
     }
@@ -297,6 +313,16 @@ impl Session {
         }
     }
 
+    /// The eraser was pressed: a stroke at a point, or the shape it has in the toolbar.
+    pub(super) fn erase_down(&mut self, world: (f32, f32)) {
+        match self.tooling.toolbox.options.erase_shape {
+            crate::toolbox::Shape::Point => self.stroke_down(world),
+            crate::toolbox::Shape::Rectangle => self.rectangle_down(world),
+            crate::toolbox::Shape::Line => self.shape_down(world, shapes::Shape::Line),
+            crate::toolbox::Shape::Circle => self.shape_down(world, shapes::Shape::Circle),
+        }
+    }
+
     /// The fill tool was pressed: sets every cell of the area under it, as one edit.
     pub(super) fn fill_down(&mut self, world: (f32, f32)) {
         // Fill is a tile tool alone, so `brush_for_press` gives it a tile or nothing.
@@ -309,13 +335,15 @@ impl Session {
         }
     }
 
-    /// The rectangle tool was pressed: begins a rectangle at the cell under it.
+    /// The rectangle tool, or the eraser in that shape, was pressed: begins a rectangle at the
+    /// cell under it.
     pub(super) fn rectangle_down(&mut self, world: (f32, f32)) {
         // With nothing it can put down chosen the rectangle is dragged out all the same, and
         // sets nothing when it is let go.
         let brush = self.brush_for_press();
         if let Some((grid, cell)) = self.cell_at(world) {
-            self.drag = Drag::Rectangle(RectangleDrag { grid, from: cell, to: cell, brush });
+            let erase = self.tool == Tool::Erase;
+            self.drag = Drag::Rectangle(RectangleDrag { grid, from: cell, to: cell, brush, erase });
         }
     }
 
@@ -333,18 +361,17 @@ impl Session {
 
     /// A rectangle was dragged on: its far corner follows the cursor.
     pub(super) fn rectangle_dragged(&self, world: (f32, f32), drag: RectangleDrag) -> Drag {
-        let RectangleDrag { grid, from, to, brush } = drag;
-        let to = self.doc.as_ref().and_then(|doc| doc.grid(grid)).map_or(to, |grid| grid.cell_at(world));
-        Drag::Rectangle(RectangleDrag { grid, from, to, brush })
+        let to = self.doc.as_ref().and_then(|doc| doc.grid(drag.grid)).map_or(drag.to, |grid| grid.cell_at(world));
+        Drag::Rectangle(RectangleDrag { to, ..drag })
     }
 
     /// A rectangle was let go: puts the brush it was pressed with down on every cell from
     /// corner to corner, as one edit.
     pub(super) fn rectangle_up(&mut self, drag: RectangleDrag) {
-        let RectangleDrag { grid, from, to, brush } = drag;
+        let RectangleDrag { grid, from, to, brush, erase } = drag;
         let Some(brush) = brush else { return };
         let cells = rectangle_cells(from, to);
-        self.put_shape(grid, &cells, &brush, ("Rectangle of tiles", "Rectangle of entities", "Rectangle of decals"), "rectangle");
+        self.put_shape(grid, &cells, &brush, ("Rectangle of tiles", "Rectangle of entities", "Rectangle of decals"), "rectangle", erase);
     }
 
     /// The outline of a rectangle being dragged out.

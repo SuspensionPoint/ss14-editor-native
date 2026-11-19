@@ -24,7 +24,7 @@ fn a_drag_with_the_pan_tool_or_the_middle_button_moves_the_view() {
 
 #[test]
 fn space_held_pans_with_the_left_button_whatever_the_tool() {
-    for ToolEntry { tool, .. } in Tool::ALL {
+    for tool in Tool::EVERY {
         let (mut session, engine) = holding(tool);
         session.held.space = true;
         let before = (session.camera.x, session.camera.y);
@@ -60,7 +60,7 @@ fn the_wheel_zooms_when_no_tool_takes_it() {
 fn the_wheel_zooms_with_any_tool_in_hand_and_during_any_drag() {
     // Pressed on the chair, and on empty floor where the select tool begins a box.
     for pressed in [(1.5, 1.5), (0.5, 4.5)] {
-        for ToolEntry { tool, .. } in Tool::ALL {
+        for tool in Tool::EVERY {
             let (mut session, engine) = holding(tool);
             let zoom = session.camera.zoom;
             session.wheel(1.0, at(&session, pressed), VIEW);

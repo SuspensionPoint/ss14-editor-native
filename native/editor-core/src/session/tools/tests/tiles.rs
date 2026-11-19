@@ -257,7 +257,10 @@ fn spawned<'a>(ops: impl IntoIterator<Item = &'a Value>, prototype: &str) -> Vec
 fn paint_with_an_entity_chosen_puts_one_on_each_cell_crossed() {
     let (mut session, engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
-    assert_eq!(session.tool(), Tool::Paint);
+    // Choosing an entity with Paint at a point takes the place tool, which is Paint at a point
+    // on entities. The paint tool's brush still works with one.
+    assert_eq!(session.tool(), Tool::Place);
+    session.set_tool(Tool::Paint);
     drag(&mut session, (0, 0), (3, 0));
 
     let edits = edits(&engine);
@@ -284,6 +287,7 @@ fn a_cell_that_holds_the_same_prototype_is_skipped() {
 fn a_stroke_does_not_put_two_on_a_cell_it_crosses_twice() {
     let (mut session, engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
+    session.set_tool(Tool::Paint);
     session.pointer_down(over(&session, (0, 0)), VIEW, Button::Primary);
     session.pointer_move(over(&session, (2, 0)), VIEW);
     session.pointer_move(over(&session, (0, 0)), VIEW);
@@ -296,6 +300,7 @@ fn a_stroke_does_not_put_two_on_a_cell_it_crosses_twice() {
 fn a_cell_with_no_tile_gets_no_entity() {
     let (mut session, engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
+    session.set_tool(Tool::Paint);
     // From the floor out over space.
     drag(&mut session, (1, 0), (-2, 0));
     assert_eq!(spawned(asked(&engine).iter().flatten(), "Table"), [(1.5, 0.5), (0.5, 0.5)]);
@@ -305,6 +310,7 @@ fn a_cell_with_no_tile_gets_no_entity() {
 fn a_stroke_of_entities_is_one_stroke() {
     let (mut session, engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
+    session.set_tool(Tool::Paint);
     drag(&mut session, (0, 0), (3, 0));
     drag(&mut session, (0, 4), (1, 4));
 
@@ -411,12 +417,15 @@ fn a_rectangle_of_more_than_ten_thousand_entities_is_refused() {
 #[test]
 fn choosing_an_entity_keeps_a_brush_in_hand_and_leaves_fill_for_place() {
     let (mut session, _engine) = Session::offline(&scene());
-    for tool in [Tool::Paint, Tool::Erase, Tool::Rectangle, Tool::Line, Tool::Circle, Tool::Select] {
+    for tool in [Tool::Erase, Tool::Rectangle, Tool::Line, Tool::Circle, Tool::Select] {
         session.set_tool(tool);
         choose(&mut session, "SnapgridCenter");
         assert_eq!(session.tool(), tool);
     }
-    for tool in [Tool::Pan, Tool::Pick, Tool::Fill, Tool::Area, Tool::Place] {
+    // Paint's shape is a point after this, so Paint on entities is the place tool. Paint at a
+    // point with an entity chosen is the place tool too.
+    session.set_tool(Tool::Paint);
+    for tool in [Tool::Pan, Tool::Paint, Tool::Pick, Tool::Fill, Tool::Area, Tool::Place] {
         session.set_tool(tool);
         choose(&mut session, "SnapgridCenter");
         assert_eq!(session.tool(), Tool::Place, "{tool:?}");
@@ -435,8 +444,9 @@ fn choosing_a_tile_goes_to_the_paint_tool_unless_a_tool_that_puts_tiles_down_is_
         session.choose_tile("FloorSteel");
         assert_eq!((session.palette(), session.tool()), (&Palette::Tile("FloorSteel".into()), tool));
     }
-    // Every other tool is put down for the paint tool. The eraser is one of them: it takes
-    // tiles away.
+    // Every other tool is put down for the paint tool, at a point since that is its shape now.
+    // The eraser is one of them: it takes tiles away.
+    session.set_tool(Tool::Paint);
     for tool in [Tool::Pan, Tool::Erase, Tool::Pick, Tool::Select, Tool::Place] {
         session.set_tool(tool);
         session.choose_tile("FloorSteel");

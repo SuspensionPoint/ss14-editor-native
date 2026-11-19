@@ -31,6 +31,7 @@ mod room;
 mod select;
 mod shapes;
 mod tiles;
+mod toolbar;
 mod view;
 
 const VIEW: (u32, u32) = (640, 640);

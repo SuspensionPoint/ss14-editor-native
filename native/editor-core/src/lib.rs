@@ -27,4 +27,5 @@ pub mod session;
 pub mod shell;
 pub mod textures;
 pub mod thumbs;
+pub mod toolbox;
 pub mod validate;

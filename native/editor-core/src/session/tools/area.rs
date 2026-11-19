@@ -403,10 +403,10 @@ impl Session {
     /// adds with Shift, and else one that takes the region's place.
     pub(super) fn area_down(&mut self, world: (f32, f32)) {
         let Some((grid, cell)) = self.cell_at(world) else { return };
-        let mode = match (self.held.ctrl, self.held.shift) {
-            (true, _) => BoxMode::TakeAway,
-            (false, true) => BoxMode::Add,
-            (false, false) => BoxMode::Replace,
+        let mode = match self.press_mode() {
+            SelectMode::Subtract => BoxMode::TakeAway,
+            SelectMode::Add => BoxMode::Add,
+            SelectMode::Replace => BoxMode::Replace,
         };
         let pressed = self.region.as_ref().filter(|region| matches!(mode, BoxMode::Replace) && region.grid == grid && region.cells.contains(&cell));
         if pressed.is_none() {

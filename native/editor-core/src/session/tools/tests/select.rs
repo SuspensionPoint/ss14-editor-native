@@ -774,7 +774,7 @@ fn the_wheel_does_not_zoom_while_r_is_held_with_an_entity_tool() {
 #[test]
 fn r_held_with_a_tile_tool_leaves_the_wheel_to_zoom() {
     // The area tool keeps R for itself, and is tried with its own tests.
-    for ToolEntry { tool, .. } in Tool::ALL.into_iter().filter(|entry| !entry.tool.is_entity_tool() && entry.tool != Tool::Area) {
+    for tool in Tool::EVERY.into_iter().filter(|&tool| !tool.is_entity_tool() && tool != Tool::Area) {
         let (mut session, engine) = holding(tool);
         // R is the rectangle tool there, as it goes down.
         assert!(session.key_down('R', false), "{tool:?}");

@@ -1,6 +1,6 @@
 //! The editor's settings, a JSON file in the user data folder: the forks it knows, the maps
-//! opened last, the fork used last, and each fork's favourites and way of placing walls. Later
-//! the keybinds too.
+//! opened last, the fork used last, each fork's favourites and way of placing walls, and the
+//! toolbar's options. Later the keybinds too.
 //!
 //! A settings file that cannot be read is taken as empty. It is written whole each time, beside
 //! its place first, so that a stopped write leaves the old one.
@@ -32,6 +32,9 @@ pub struct Settings {
     pub placing: Vec<ForkPlacing>,
     /// Whether animated sprites move (View > Animate sprites). Off until a mapper turns it on.
     pub animate_sprites: bool,
+    /// The toolbar's options: the shape of Paint and of Erase, what Select selects, and
+    /// whether Paint puts entities where the cursor is. The same for every fork.
+    pub tools: crate::toolbox::ToolOptions,
 }
 
 /// How one fork's walls are placed. A fork with no entry places them as `ForkPlacing::default`.
