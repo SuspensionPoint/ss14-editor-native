@@ -183,7 +183,8 @@ struct Around {
     backdrop_pipeline: wgpu::RenderPipeline,
     backdrop_layout: wgpu::BindGroupLayout,
     backdrop_sampler: wgpu::Sampler,
-    /// A flat black under the layers, as the game clears its view to.
+    /// A flat black under the layers, as the game clears its view to. It is drawn whenever the
+    /// backdrop is on, layers or not.
     floor: wgpu::BindGroup,
     layers: Vec<ShownLayer>,
     backdrop_id: u64,
@@ -673,7 +674,10 @@ impl MapRenderer {
         let centre = [camera.x, camera.y];
         let half = [width.max(1) as f32 / 2.0 / pixels, height.max(1) as f32 / 2.0 / pixels];
 
-        self.around.backdrop_shown = surround.backdrop && !self.around.layers.is_empty();
+        // The game clears its view to black before anything is drawn (Clyde.Viewport.cs), so
+        // with the backdrop on there is black behind the map even when the map has no layers,
+        // or none of them could be read.
+        self.around.backdrop_shown = surround.backdrop;
         if self.around.backdrop_shown {
             for layer in &self.around.layers {
                 let (origin, size) = layer.placing.place(layer.pixels, (camera.x, camera.y), surround.seconds);
