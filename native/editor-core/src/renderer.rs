@@ -105,7 +105,8 @@ struct ViewUniform {
     atlas_size: f32,
     /// One bit per layer; a set bit hides it.
     hidden: u32,
-    _padding: [f32; 2],
+    /// The target's size in device pixels, for the map's corners to be put on its pixels.
+    pixels: [f32; 2],
 }
 
 #[repr(C)]
@@ -1139,7 +1140,7 @@ impl MapRenderer {
             centre: [camera.x, camera.y],
             atlas_size: LAYER_SIZE as f32,
             hidden,
-            _padding: [0.0; 2],
+            pixels: [width.max(1) as f32, height.max(1) as f32],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
     }

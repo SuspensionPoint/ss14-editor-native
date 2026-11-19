@@ -13,6 +13,8 @@ struct View {
     atlas_size: f32,
     // One bit per map layer; a set bit hides it.
     hidden: u32,
+    // The target's size in device pixels.
+    pixels: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -79,6 +81,10 @@ fn place(index: u32, instance: Instance) -> Varying {
 @vertex
 fn vertex(@builtin(vertex_index) index: u32, instance: Instance) -> Varying {
     var out = place(index, instance);
+    // The game puts every corner on the nearest corner of a screen pixel (base-default.vert),
+    // so a sprite between two pixels lands on one of them whole.
+    let snapped = floor((out.position.xy + 1.0) * 0.5 * view.pixels + 0.5) / view.pixels * 2.0 - 1.0;
+    out.position = vec4<f32>(snapped, out.position.zw);
     // The tint is written in sRGB and the game turns it to linear here (base-default.vert).
     out.color = vec4<f32>(from_srgb(out.color.rgb), out.color.a);
     return out;
