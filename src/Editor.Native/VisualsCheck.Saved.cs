@@ -211,6 +211,13 @@ public static partial class VisualsCheck
             states => states.Contains("closed") && !states.Contains("open"));
         Case("door saved open", entity => SavedField(scene, entity.Uid, "Door", "state") == "Open",
             states => states.Contains("open") && !states.Contains("closed"));
+        // A light fixture as mapping mode shows it: no bulb, since the server puts one in only
+        // as the map starts (Content.Server/Light/EntitySystems/PoweredLightSystem.cs OnMapInit),
+        // and no bulb state, which only UpdateLight sets and nothing calls as a map loads
+        // (Content.Shared/Light/EntitySystems/SharedPoweredLightSystem.cs OnInit). So the client's
+        // PoweredLightVisualizerSystem leaves the prototype's layers as they are: the tube and its glow.
+        Case("light fixture as mapping mode shows it", entity => entity.Prototype == "Poweredlight",
+            states => states.Contains("base") && states.Contains("glow"));
         bool? FilterOn(SceneEntity entity) =>
             scene.Visuals.FirstOrDefault(look => look.Uid == entity.Uid)?.Appearance?.FirstOrDefault(value => value.KeyType.EndsWith(".FilterVisuals", StringComparison.Ordinal))?.Value is { } on ? on == "true" : null;
         Case("filter that is on", entity => entity.Prototype.StartsWith("GasFilter", StringComparison.Ordinal) && FilterOn(entity) == true,
