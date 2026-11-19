@@ -345,6 +345,11 @@ pub(crate) fn Canvas() -> Element {
                 with(|editor| {
                     editor.menu = None;
                     if editor.pressing.is_some() {
+                        // The secondary button during a drag drops a room being dragged out.
+                        // The press goes on until its own button comes up.
+                        if button == Button::Secondary {
+                            editor.session.cancel_room();
+                        }
                         return;
                     }
                     take_move(editor);

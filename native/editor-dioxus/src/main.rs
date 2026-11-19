@@ -22,6 +22,7 @@ mod find;
 mod links;
 mod loading;
 mod palettes;
+mod placing;
 mod prefabs;
 mod run;
 mod selection;

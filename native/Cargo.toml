@@ -4,7 +4,7 @@ resolver = "2"
 members = ["editor-core", "editor-dioxus"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["SS14 Map Editor contributors"]
 license = "MIT"

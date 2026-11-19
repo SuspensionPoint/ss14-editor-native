@@ -397,7 +397,7 @@ fn walls_without_floor_in<'a>(doc: &Doc, standing: &[Standing], prototype: impl 
 
 /// Walls that may stand on any tile, though they have the Wall tag. The web editor's list,
 /// which is the game's `AllowedWalls` in `MapWallFloorTests.cs`.
-const ALLOWED_WALLS: &[&str] = &[
+pub(crate) const ALLOWED_WALLS: &[&str] = &[
     "AsteroidRock",
     "AsteroidRockArtifactFragment",
     "AsteroidRockBananium",

@@ -1,5 +1,6 @@
 //! The editor's settings, a JSON file in the user data folder: the forks it knows, the maps
-//! opened last, the fork used last and each fork's favourites. Later the keybinds too.
+//! opened last, the fork used last, and each fork's favourites and way of placing walls. Later
+//! the keybinds too.
 //!
 //! A settings file that cannot be read is taken as empty. It is written whole each time, beside
 //! its place first, so that a stopped write leaves the old one.
@@ -26,6 +27,35 @@ pub struct Settings {
     pub favourites: Vec<ForkFavourites>,
     /// The forks, by folder, whose maps show the Problems overlay. It is off for the others.
     pub problems_shown: Vec<String>,
+    /// How each fork's walls are placed, by its folder: the tile laid under them, the Room
+    /// tool's wall and its Intersection switch.
+    pub placing: Vec<ForkPlacing>,
+}
+
+/// How one fork's walls are placed. A fork with no entry places them as `ForkPlacing::default`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForkPlacing {
+    /// The fork's folder, as [`KnownFork::path`].
+    pub fork: String,
+    /// Whether a brush lays a tile under a wall it puts on a cell with no tile.
+    pub floor_under_walls: bool,
+    /// The tile it lays there, which the Room tool also lays under its walls.
+    pub floor_tile: String,
+    /// The wall prototype the Room tool puts on a room's edge, if one was chosen.
+    pub room_wall: Option<String>,
+    /// Whether the Room tool joins a new room to the rooms it overlaps (its Intersection
+    /// switch), in the place of keeping them separate.
+    pub room_intersection: bool,
+}
+
+/// The tile laid under walls until a mapper picks another.
+pub const PLATING: &str = "Plating";
+
+impl Default for ForkPlacing {
+    fn default() -> Self {
+        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None, room_intersection: false }
+    }
 }
 
 /// What a favourite is: a tile, an entity or a decal.
@@ -185,6 +215,7 @@ impl Settings {
         self.recent_maps.retain(|map| !same_path(&map.fork, path));
         self.favourites.retain(|kept| !same_path(&kept.fork, path));
         self.problems_shown.retain(|shown| !same_path(shown, path));
+        self.placing.retain(|kept| !same_path(&kept.fork, path));
         if self.last_fork.as_deref().is_some_and(|last| same_path(last, path)) {
             self.last_fork = None;
         }
@@ -245,6 +276,18 @@ impl Settings {
         if on {
             self.problems_shown.push(forward_slashes(Path::new(fork)));
         }
+    }
+
+    /// How a fork's walls are placed, by its folder. A fork with none kept has the defaults.
+    pub fn placing(&self, fork: &str) -> ForkPlacing {
+        let kept = self.placing.iter().find(|kept| same_path(&kept.fork, fork)).cloned();
+        ForkPlacing { fork: forward_slashes(Path::new(fork)), ..kept.unwrap_or_default() }
+    }
+
+    /// Keeps how a fork's walls are placed, in the place of what it had.
+    pub fn set_placing(&mut self, placing: ForkPlacing) {
+        self.placing.retain(|kept| !same_path(&kept.fork, &placing.fork));
+        self.placing.push(placing);
     }
 
     /// The keys of the packs, textures and engine sides the known forks last used, which the

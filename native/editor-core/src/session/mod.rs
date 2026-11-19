@@ -54,9 +54,9 @@ pub use palettes::{shown_name, InHand};
 pub use problems::PLATING;
 pub use tools::{
     arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MenuAction, MenuEntry, Outline,
-    OutlineStyle, PickList, Pickable, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, ToolEntry, CONTROLS, PIPE_COLOURS,
+    OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, ToolEntry, CONTROLS, PIPE_COLOURS,
 };
-use tools::{Copying, Decaling, Drag, Hint, Laying, Linking, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Turning};
+use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Turning};
 
 /// Where a session's pack and textures come from.
 enum Content {
@@ -187,9 +187,10 @@ impl Performance {
 }
 
 /// The verbs edits are named with, and how a status bar says them once the edit is made.
-const DONE: [(&str, &str); 22] = [
+const DONE: [(&str, &str); 23] = [
     ("Add", "Added"),
     ("Auto-link", "Auto-linked"),
+    ("Build", "Built"),
     ("Delete", "Deleted"),
     ("Edit", "Edited"),
     ("Erase", "Erased"),
@@ -282,6 +283,9 @@ pub struct Session {
     palettes: palettes::Palettes,
     /// The favourites, kept in the settings file under the fork.
     favourites: favourites::Favourites,
+    /// Whether a tile is laid under new walls and which, and the Room tool's wall, kept in
+    /// the settings file under the fork.
+    flooring: Flooring,
     /// Selected entities, by uid.
     pub selection: Vec<i32>,
     /// Selected decals, by their grid's uid and their id on it. The select tool selects them
@@ -439,6 +443,7 @@ impl Session {
         session.locale = Locale::read(&fork, wake.clone());
         session.favourites = favourites::Favourites::load(crate::forks::settings::Settings::file(), &fork);
         session.problems = problems::Problems::load(crate::forks::settings::Settings::file(), &fork);
+        session.flooring = Flooring::load(crate::forks::settings::Settings::file(), &fork);
         std::thread::Builder::new()
             .name("engine".into())
             .spawn(move || {
@@ -488,6 +493,7 @@ impl Session {
             reveal: false,
             palettes: palettes::Palettes::default(),
             favourites: favourites::Favourites::default(),
+            flooring: Flooring::default(),
             selection: Vec::new(),
             selected_decals: Vec::new(),
             details: None,

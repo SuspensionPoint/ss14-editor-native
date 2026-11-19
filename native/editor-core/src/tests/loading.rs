@@ -191,3 +191,27 @@ fn the_timing_curves_run_from_nothing_to_all() {
     // CSS's ease is a little past half at a quarter of the time.
     assert!(near(EASE.at(0.25), 0.41));
 }
+
+#[test]
+fn the_steel_floor_is_found_where_the_fork_keeps_it() {
+    let fork = std::env::temp_dir().join(format!("editor-core-steel-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&fork);
+    let tiles = fork.join("Resources/Prototypes/Tiles");
+    std::fs::create_dir_all(&tiles).unwrap();
+    std::fs::create_dir_all(fork.join("Resources/Textures/Tiles/Basic/Gray")).unwrap();
+    std::fs::write(fork.join("Resources/Textures/Tiles/Basic/Gray/gray.png"), b"png").unwrap();
+    // As Space Wizards' master has it: another tile first, then FloorSteel with its own sprite.
+    std::fs::write(
+        tiles.join("basic.yml"),
+        "- type: tile\n  id: FloorDark\n  sprite: /Textures/Tiles/dark.png\n\n- type: tile\n  id: FloorSteel\n  name: tiles-steel-floor\n  sprite: /Textures/Tiles/Basic/Gray/gray.png\n",
+    )
+    .unwrap();
+    assert_eq!(steel_tile_picture(&fork), Some(fork.join("Resources").join("Textures/Tiles/Basic/Gray/gray.png")));
+
+    // A fork that names no sprite for it falls back to the older steel.png, if it has one.
+    std::fs::write(tiles.join("basic.yml"), "- type: tile\n  id: FloorDark\n  sprite: /Textures/Tiles/dark.png\n").unwrap();
+    assert_eq!(steel_tile_picture(&fork), None);
+    std::fs::write(fork.join("Resources/Textures/Tiles/steel.png"), b"png").unwrap();
+    assert_eq!(steel_tile_picture(&fork), Some(fork.join("Resources").join("Textures").join("Tiles").join("steel.png")));
+    let _ = std::fs::remove_dir_all(&fork);
+}
