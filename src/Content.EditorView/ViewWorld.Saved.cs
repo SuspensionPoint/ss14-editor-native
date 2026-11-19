@@ -271,6 +271,9 @@ public sealed partial class ViewWorld
         // and still be no different from the client's prototype.
         var context = new DocumentUids(_serialization, doc);
         var whole = _serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: true, context: context);
+        // A component the prototype lacks is saved without the fields left at their defaults,
+        // nested ones too, so it is compared written the same way as well.
+        var brief = _serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: false, context: context);
         foreach (var (key, value) in saved.Data)
         {
             var name = $"{saved.Name}.{key}";
@@ -281,7 +284,7 @@ public sealed partial class ViewWorld
             }
 
             ReadFields++;
-            if (read.Equals(value))
+            if (read.Equals(value) || brief.TryGet(key, out var written) && written.Equals(value))
                 continue;
 
             var (count, example) = ReadWrong.GetValueOrDefault(name, (0, ""));
