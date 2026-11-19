@@ -286,21 +286,39 @@ public sealed class TextureRegistry
         };
 
         // An RSI state's image holds its frames in reading order: every frame of the first
-        // direction, then every frame of the next.
-        var index = 0;
+        // direction, then every frame of the next. When the directions' delays differ, the
+        // engine folds them into one timeline that fits every direction (RSIResource.FoldDelays),
+        // so a direction repeats an image frame for as long as it lasts. Each repeat is a texture
+        // of its own, cut from the same place of the sheet, and the repeats come one after
+        // another. So the count moves on only when the place a frame is cut from changes.
+        var index = -1;
         for (var direction = 0; direction < directions; direction++)
         {
+            Texture? previous = null;
             foreach (var frame in state.GetFrames((RsiDirection) direction))
             {
+                if (previous == null || !SamePlace(previous, frame))
+                    index++;
+                previous = frame;
+
                 if (!_ids.ContainsKey(frame))
                 {
                     var id = _sources.Count;
                     _ids[frame] = id;
                     _sources.Add(new TextureSource(id, rsi.Path.ToString(), state.StateId.Name, index, frame.Width, frame.Height));
                 }
-
-                index++;
             }
         }
+    }
+
+    /// <summary>Whether two frames are cut from the same place of the same sheet.</summary>
+    private static bool SamePlace(Texture a, Texture b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+
+        return a is AtlasTexture first && b is AtlasTexture second
+            && ReferenceEquals(first.SourceTexture, second.SourceTexture)
+            && first.SubRegion.Equals(second.SubRegion);
     }
 }
