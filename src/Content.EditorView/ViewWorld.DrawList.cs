@@ -339,7 +339,7 @@ public sealed partial class ViewWorld
     private void RecordTiles(EntityUid gridUid, MapGridComponent grid, Vector2i chunk, HashSet<Vector2i> existing, Matrix3x2 matrix)
     {
         var origin = chunk * ChunkSize;
-        var edges = new List<(Vector2i Cell, string Path)>();
+        var edges = new List<(Vector2i Cell, string Path, int Turns)>();
 
         // One cell beyond the chunk on every side, for edges that fall on cells no chunk holds.
         for (var x = -1; x <= ChunkSize; x++)
@@ -381,14 +381,29 @@ public sealed partial class ViewWorld
 
                 var direction = new Vector2i(nx, ny).AsDirection().GetOpposite();
                 if (neighbourDefinition.EdgeSprites.TryGetValue(direction, out var edge))
-                    edges.Add((cell, edge.ToString()));
+                    edges.Add((cell, edge.ToString(), EdgeTurns(direction)));
             }
         }
 
         // Edges go over every tile of the chunk, as the renderer draws them in a second pass.
-        foreach (var (cell, path) in edges)
-            AddTile(_textures.File(path, 0, TilePixels, TilePixels), cell, 0, matrix);
+        foreach (var (cell, path, turns) in edges)
+            AddTile(_textures.File(path, 0, TilePixels, TilePixels), cell, turns, matrix);
     }
+
+    /// <summary>
+    /// The quarter turns an edge image takes for its direction. The game draws each edge image
+    /// for the south side, or the south-east corner, and turns it to face the others when it
+    /// loads the tile atlas (ClydeTileDefinitionManager): a quarter for east and north-east,
+    /// a half for north and north-west, three quarters for west and south-west. One turn in
+    /// <see cref="AddTile"/> takes the image's lower side to the cell's right, as east needs.
+    /// </summary>
+    private static int EdgeTurns(Direction direction) => direction switch
+    {
+        Direction.East or Direction.NorthEast => 1,
+        Direction.North or Direction.NorthWest => 2,
+        Direction.West or Direction.SouthWest => 3,
+        _ => 0,
+    };
 
     private void AddTile(int textureId, Vector2i cell, int rotationMirroring, Matrix3x2 matrix)
     {
