@@ -25,6 +25,8 @@ pub struct Settings {
     /// The favourites of each fork, by its folder. A fork given on the command line that is not
     /// in `forks` keeps its own here too.
     pub favourites: Vec<ForkFavourites>,
+    /// The forks, by folder, whose maps show the Problems overlay. It is off for the others.
+    pub problems_shown: Vec<String>,
     /// How each fork's walls are placed, by its folder: the tile laid under them, the Room
     /// tool's wall and its Intersection switch.
     pub placing: Vec<ForkPlacing>,
@@ -212,6 +214,7 @@ impl Settings {
         self.forks.retain(|fork| !same_path(&fork.path, path));
         self.recent_maps.retain(|map| !same_path(&map.fork, path));
         self.favourites.retain(|kept| !same_path(&kept.fork, path));
+        self.problems_shown.retain(|shown| !same_path(shown, path));
         self.placing.retain(|kept| !same_path(&kept.fork, path));
         if self.last_fork.as_deref().is_some_and(|last| same_path(last, path)) {
             self.last_fork = None;
@@ -259,6 +262,19 @@ impl Settings {
             Some(_) => self.favourites.retain(|kept| !same_path(&kept.fork, fork)),
             None if !items.is_empty() => self.favourites.push(ForkFavourites { fork: forward_slashes(Path::new(fork)), items }),
             None => {}
+        }
+    }
+
+    /// Whether a fork's maps show the Problems overlay.
+    pub fn problems_shown(&self, fork: &str) -> bool {
+        self.problems_shown.iter().any(|shown| same_path(shown, fork))
+    }
+
+    /// Turns the Problems overlay on or off for a fork's maps.
+    pub fn show_problems(&mut self, fork: &str, on: bool) {
+        self.problems_shown.retain(|shown| !same_path(shown, fork));
+        if on {
+            self.problems_shown.push(forward_slashes(Path::new(fork)));
         }
     }
 

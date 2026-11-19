@@ -24,6 +24,7 @@ mod pick;
 mod pipes;
 mod place;
 mod prefabs;
+mod problems;
 mod region_copy;
 mod room;
 mod select;

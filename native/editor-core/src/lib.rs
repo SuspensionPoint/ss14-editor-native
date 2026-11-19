@@ -17,6 +17,7 @@ pub mod locale;
 pub mod model;
 pub mod palette;
 pub mod prefab;
+pub mod problems;
 pub mod renderer;
 pub mod rooms;
 pub mod search;

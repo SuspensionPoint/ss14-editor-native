@@ -58,7 +58,26 @@ fn prototypes() -> Vec<Prototype> {
         tube("DisposalRouter", &[6, 0, 4], &["DisposalRouter"]),
         Prototype { id: "DisposalUnit".into(), components: vec![Arc::from("DisposalUnit")], ..Default::default() },
         Prototype { id: "ConveyorBelt".into(), components: vec![Arc::from("Conveyor")], ..Default::default() },
+        // Windows, doors and what goes with them, by their tags and components.
+        made("Window", &["Window"], &["Airtight"]),
+        made("WindowDirectional", &["Window", "DirectionalWindow"], &["Airtight"]),
+        made("WindowBrassDirectional", &["Window"], &["Airtight"]),
+        made("Grille", &[], &[]),
+        made("Airlock", &[], &["Door", "Airtight"]),
+        made("Firelock", &[], &["Door", "Airtight", "Firelock"]),
+        made("ShuttersNormalOpen", &[], &["Door", "Airtight"]),
+        made("BlastDoor", &[], &["Door", "Airtight"]),
+        made("Windoor", &[], &["Door", "Airtight"]),
+        made("CableHV", &[], &[]),
+        made("Poweredlight", &[], &[]),
+        made("SpawnPointLatejoin", &[], &["SpawnPoint"]),
+        made("RandomProduce", &[], &["EntityTableSpawner"]),
     ]
+}
+
+fn made(id: &str, tags: &[&str], components: &[&str]) -> Prototype {
+    let names = |names: &[&str]| names.iter().map(|&name| Arc::from(name)).collect();
+    Prototype { id: id.into(), tags: names(tags), components: names(components), ..Default::default() }
 }
 
 fn tube(id: &str, exits: &[u8], components: &[&str]) -> Prototype {
@@ -230,7 +249,8 @@ fn a_clean_map_has_no_findings() {
 fn a_wall_on_a_floor_is_found_and_one_on_space_is_not() {
     let doc = doc(&[entity(10, "WallSolid", (1, 2)), entity(11, "WallSolid", (5, 5))], &[]);
     let findings = check(&doc);
-    assert_eq!(places(&findings), [(Rule::FloorUnderWall, (1, 2), Some(10), None)]);
+    // The one on space has no floor, which is a rule of its own.
+    assert_eq!(places(&findings), [(Rule::FloorUnderWall, (1, 2), Some(10), None), (Rule::WallWithoutFloor, (5, 5), Some(11), None)]);
     assert_eq!(findings[0].message, "Floor tile (FloorSteel) under wall at (1, 2). Walls should be on Plating.");
     assert_eq!(findings[0].grid, GRID);
 }
@@ -376,26 +396,51 @@ fn a_grid_of_floors_with_no_atmosphere_is_found_and_a_planet_s_ground_is_not() {
     assert!(check(&with(false, false)).is_empty() && check(&with(true, false)).is_empty());
 }
 
-/// The air rules and open disposal ends on the fork's stations, through the engine published in
-/// src/Editor.Native/bin/r2r (or the folder in EDITOR_ENGINE). It prints what they find.
-/// Not run with the others: it starts the engine, which takes a minute and several GB.
-/// `cargo test -p editor-core --release stations -- --ignored --nocapture`
+/// The air rules, open disposal ends and the rules of walls on the fork's stations, through the
+/// engine published in src/Editor.Native/bin/r2r (or the folder in EDITOR_ENGINE), on the fork
+/// in upstream/starlight (or EDITOR_FORK) with the pack in native/cache (or EDITOR_PACK). It
+/// prints what they find, which prototypes count as walls, windows and doors, and how long the
+/// cheap rules take. Not run with the others: it starts the engine, which takes a minute and
+/// several GB. `cargo test -p editor-core --release stations -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn stations() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-    let folder = std::env::var_os("EDITOR_ENGINE").map(std::path::PathBuf::from).unwrap_or_else(|| root.join("src/Editor.Native/bin/r2r"));
+    let given = |name: &str, inside: &str| std::env::var_os(name).map(std::path::PathBuf::from).unwrap_or_else(|| root.join(inside));
+    let folder = given("EDITOR_ENGINE", "src/Editor.Native/bin/r2r");
+    let fork = given("EDITOR_FORK", "upstream/starlight");
+    let pack = given("EDITOR_PACK", "native/cache/kernel-resources.zip");
     let engine = crate::engine::Engine::load(&folder).unwrap();
-    let path = |inside: &str| root.join(inside).to_string_lossy().replace('\\', "/");
-    engine.start(&path("upstream/starlight"), Some(&path("native/cache/kernel-resources.zip")));
+    let path = |at: &std::path::Path| at.to_string_lossy().replace('\\', "/");
+    engine.start(&path(&fork), Some(&path(&pack)));
     engine.wait_ready().unwrap();
     let prototypes: Vec<Prototype> = engine.call("prototypes", &serde_json::json!({})).unwrap();
-    let prototype = |id: &str| prototypes.iter().find(|prototype| prototype.id == id);
+    let by_id: HashMap<&str, &Prototype> = prototypes.iter().map(|prototype| (prototype.id.as_str(), prototype)).collect();
+    let prototype = |id: &str| by_id.get(id).copied();
+    // What counts as a wall, a window and a door, among the prototypes a mapper can place.
+    for kind in [Blocker::Wall, Blocker::Window, Blocker::Door] {
+        let ids: Vec<&str> = prototypes.iter().filter(|prototype| prototype.placeable() && blocker(prototype) == Some(kind)).map(|prototype| prototype.id.as_str()).collect();
+        println!("{kind:?}: {} prototypes: {}", ids.len(), ids.join(", "));
+    }
     let tiles: Vec<serde_json::Value> = engine.call("tiles", &serde_json::json!({})).unwrap();
     let pryable: HashSet<&str> = tiles.iter().filter(|tile| tile["canCrowbar"] == true).filter_map(|tile| tile["id"].as_str()).collect();
     for map in ["Bagel", "Cork", "Starboard"] {
-        let opened: serde_json::Value = engine.call("open", &serde_json::json!({ "path": path(&format!("upstream/starlight/Resources/Maps/_Starlight/Stations/{map}.yml")) })).unwrap();
+        let opened: serde_json::Value = engine.call("open", &serde_json::json!({ "path": path(&fork.join(format!("Resources/Maps/_Starlight/Stations/{map}.yml"))) })).unwrap();
         let mut doc = Doc::from_scene(serde_json::from_value(opened["scene"].clone()).unwrap(), None);
+        // The cheap rules, as the Problems overlay runs them after each edit.
+        let begun = std::time::Instant::now();
+        let runs = 10;
+        let mut quick_found = Vec::new();
+        for _ in 0..runs {
+            quick_found = quick(&doc, prototype);
+        }
+        println!("\n{map}: {} entities, the cheap rules in {:?} a run", doc.entities.len(), begun.elapsed() / runs);
+        for finding in quick_found.iter().filter(|finding| matches!(finding.rule, Rule::StackedWalls | Rule::Duplicates | Rule::WallWithoutFloor)) {
+            let anchored = finding.entity.map_or(false, |uid| doc.entities[&uid].anchored);
+            println!("  {:?} on grid {} (anchored {anchored}): {}", finding.rule, finding.grid, finding.message);
+        }
+        let count = |rule: Rule| quick_found.iter().filter(|finding| finding.rule == rule).count();
+        println!("  {map} counts: stacked {}, duplicates {}, no floor {}", count(Rule::StackedWalls), count(Rule::Duplicates), count(Rule::WallWithoutFloor));
         let begun = std::time::Instant::now();
         let mut answer: AirAnswer = engine.call("air", &serde_json::json!({ "doc": doc.id })).unwrap();
         answer.grids.iter_mut().for_each(GridAirJson::find_rooms);
@@ -423,4 +468,195 @@ fn findings_are_grouped_by_rule_in_the_order_of_the_rules() {
     assert_eq!(groups, [(Rule::FloorUnderWall, 2), (Rule::DoorWithoutFloor, 1), (Rule::UnknownDecal, 1)]);
     // Within a rule, by uid.
     assert_eq!(findings[0].entity, Some(10));
+}
+
+
+/// An entity standing loose on the map itself, off every grid, at a point.
+fn on_the_map(uid: i32, prototype: &str, at: (f32, f32)) -> String {
+    format!(r#"{{"uid":{uid},"yamlUid":{uid},"prototype":"{prototype}","parent":1,"x":{},"y":{},"rotation":0,"anchored":false,"contained":false,"name":null}}"#, at.0, at.1)
+}
+
+/// An entity as `entity` makes it, not anchored.
+fn loose(uid: i32, prototype: &str, cell: (i32, i32)) -> String {
+    entity(uid, prototype, cell).replace(r#""anchored":true"#, r#""anchored":false"#)
+}
+
+fn of_rule(doc: &Doc, rule: Rule) -> Vec<Finding> {
+    check(doc).into_iter().filter(|finding| finding.rule == rule).collect()
+}
+
+#[test]
+fn walls_windows_and_doors_are_told_by_their_tags_and_components() {
+    let prototypes = prototypes();
+    let kind = |id: &str| blocker(prototypes.iter().find(|prototype| prototype.id == id).unwrap());
+    assert_eq!((kind("WallSolid"), kind("AsteroidRock"), kind("Window"), kind("Airlock")), (Some(Blocker::Wall), Some(Blocker::Wall), Some(Blocker::Window), Some(Blocker::Door)));
+    // Half a cell, a pane on one side, and what goes over or beside a door or a window.
+    for id in ["WallSolidDiagonal", "WindowDirectional", "WindowBrassDirectional", "Grille", "Firelock", "ShuttersNormalOpen", "BlastDoor", "Windoor", "Table"] {
+        assert_eq!(kind(id), None, "{id}");
+    }
+    // Space Wizards' master marks walls with a Wall component, and no Wall tag.
+    let upstream = Prototype { id: "WallSolid".into(), components: vec![Arc::from("Wall")], anchored: true, ..Default::default() };
+    assert_eq!(blocker(&upstream), Some(Blocker::Wall));
+}
+
+#[test]
+fn walls_windows_and_doors_on_one_cell_are_stacked() {
+    let doc = doc(
+        &[
+            entity(10, "WallSolid", (0, 0)),
+            entity(11, "WallSolid", (0, 0)),
+            entity(12, "Window", (2, 1)),
+            entity(13, "Airlock", (2, 1)),
+            entity(14, "WallSolid", (2, 1)),
+        ],
+        &[],
+    );
+    let found = of_rule(&doc, Rule::StackedWalls);
+    assert_eq!(places(&found), [(Rule::StackedWalls, (0, 0), Some(10), None), (Rule::StackedWalls, (2, 1), Some(12), None)]);
+    assert_eq!(found[1].message, "Window, Airlock and WallSolid are stacked at (2, 1). One cell holds one wall, window or door.");
+    assert_eq!((found[0].grid, found[0].fix(), Rule::StackedWalls.severity()), (GRID, Some(Fix::RemoveExtras), Severity::Warning));
+    // A fix keeps the first by uid.
+    let prototypes = prototypes();
+    let prototype = |id: &str| prototypes.iter().find(|prototype| prototype.id == id);
+    assert_eq!(extras(&doc, prototype, &found[1]), [13, 14]);
+    assert_eq!(extras(&doc, prototype, &found[0]), [11]);
+}
+
+#[test]
+fn what_the_game_puts_together_on_purpose_is_not_stacked() {
+    let doc = doc(
+        &[
+            // A door with its firelock, a window on its grille with shutters, a blast door over
+            // a window, panes on two sides of a cell, and a windoor beside one.
+            entity(10, "Airlock", (0, 1)),
+            entity(11, "Firelock", (0, 1)),
+            entity(12, "Window", (1, 1)),
+            entity(13, "Grille", (1, 1)),
+            entity(14, "ShuttersNormalOpen", (1, 1)),
+            entity(15, "Window", (2, 1)),
+            entity(16, "BlastDoor", (2, 1)),
+            turned_entity(17, "WindowDirectional", (0, 2), 0),
+            turned_entity(18, "WindowDirectional", (0, 2), 1),
+            entity(19, "Windoor", (0, 2)),
+        ],
+        &[],
+    );
+    assert!(check(&doc).is_empty(), "{:?}", check(&doc));
+    // Two walls of which one is loose are not stacked: only what is anchored counts.
+    assert!(of_rule(&doc_with(&[entity(20, "WallSolid", (0, 0)), loose(21, "WallSolid", (0, 0))]), Rule::StackedWalls).is_empty());
+}
+
+fn doc_with(entities: &[String]) -> Doc {
+    doc(entities, &[])
+}
+
+#[test]
+fn the_same_thing_twice_on_a_cell_is_a_duplicate() {
+    let doc = doc_with(&[
+        entity(30, "CableHV", (1, 1)),
+        entity(31, "CableHV", (1, 1)),
+        entity(32, "CableHV", (1, 1)),
+        // A light on each of two walls of a cell is turned two ways, and no duplicate.
+        turned_entity(33, "Poweredlight", (2, 2), 0),
+        turned_entity(34, "Poweredlight", (2, 2), 1),
+        // Turned a whole turn round is the same way.
+        turned_entity(35, "Poweredlight", (0, 2), 0),
+        turned_entity(36, "Poweredlight", (0, 2), 4),
+        // Markers and spawners stack on purpose.
+        entity(37, "SpawnPointLatejoin", (1, 2)),
+        entity(38, "SpawnPointLatejoin", (1, 2)),
+        entity(39, "RandomProduce", (1, 2)),
+        entity(40, "RandomProduce", (1, 2)),
+        // One of the two is loose: no duplicate.
+        entity(41, "Table", (2, 1)),
+        loose(42, "Table", (2, 1)),
+    ]);
+    let found = of_rule(&doc, Rule::Duplicates);
+    assert_eq!(places(&found), [(Rule::Duplicates, (1, 1), Some(30), None), (Rule::Duplicates, (0, 2), Some(35), None)]);
+    assert_eq!(found[0].message, "CableHV is on (1, 1) 3 times.");
+    assert_eq!(found[1].fix(), Some(Fix::RemoveExtras));
+    let prototypes = prototypes();
+    let prototype = |id: &str| prototypes.iter().find(|prototype| prototype.id == id);
+    assert_eq!(extras(&doc, prototype, &found[0]), [31, 32]);
+    assert_eq!(extras(&doc, prototype, &found[1]), [36]);
+    // A finding no longer on the map has nothing to remove.
+    let gone = Finding { entity: Some(99), ..found[0].clone() };
+    assert!(extras(&doc, prototype, &gone).is_empty());
+}
+
+#[test]
+fn a_wall_on_no_tile_or_off_every_grid_has_no_floor() {
+    let doc = doc_with(&[
+        // Space under a wall, a window and a door. Lattice is a tile, and holds a wall.
+        loose(50, "WallSolid", (5, 5)),
+        entity(51, "Window", (6, 5)),
+        entity(52, "Airlock", (4, 4)),
+        entity(53, "WallSolid", (1, 0)),
+        // A firelock on space is no wall, and a table on space is none of these.
+        entity(54, "Firelock", (5, 4)),
+        entity(55, "Table", (5, 6)),
+        on_the_map(56, "WallReinforced", (20.3, -4.6)),
+    ]);
+    let found = of_rule(&doc, Rule::WallWithoutFloor);
+    assert_eq!(
+        places(&found),
+        [(Rule::WallWithoutFloor, (5, 5), Some(50), None), (Rule::WallWithoutFloor, (6, 5), Some(51), None), (Rule::WallWithoutFloor, (4, 4), Some(52), None)]
+    );
+    assert_eq!(found[0].message, "WallSolid at (5, 5) has no tile under it. In the game it comes loose, can drift, and doesn't seal the room.");
+    assert_eq!(found[0].fix(), Some(Fix::LayPlating));
+    // Off every grid, but only for a prototype the engine knows as a wall: WallReinforced is
+    // not among the test's prototypes. One that is, is found on the map.
+    let map = doc_with(&[on_the_map(57, "WallSolid", (20.3, -4.6))]);
+    let found = of_rule(&map, Rule::WallWithoutFloor);
+    assert_eq!(places(&found), [(Rule::WallWithoutFloor, (20, -5), Some(57), None)]);
+    assert_eq!((found[0].grid, found[0].fix()), (0, Some(Fix::Select(57))));
+    assert_eq!(found[0].message, "WallSolid at (20, -5) is on no grid. In the game it floats loose in space.");
+}
+
+#[test]
+fn the_quick_rules_are_the_ones_of_entities_and_tiles() {
+    let doc = doc_with(&[entity(10, "WallSolid", (1, 2)), entity(11, "WallSolid", (1, 2)), entity(12, "AirlockGlass", (5, 5))]);
+    let prototypes = prototypes();
+    let quick = quick(&doc, |id| prototypes.iter().find(|prototype| prototype.id == id));
+    let rules: Vec<Rule> = quick.iter().map(|finding| finding.rule).collect();
+    assert_eq!(rules, [Rule::FloorUnderWall, Rule::FloorUnderWall, Rule::DoorWithoutFloor, Rule::StackedWalls, Rule::Duplicates]);
+    assert_eq!(quick, check(&doc));
+}
+
+/// Lay plating on a station, through the engine as `stations` finds it: a wall made loose on a
+/// cell with no tile is anchored again by the fix's edit, one undo makes it loose again, and a
+/// redo fixes it once more. Not run with the others, for the same reasons.
+/// `cargo test -p editor-core --release plating_anchors -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn plating_anchors_a_loose_wall() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    let given = |name: &str, inside: &str| std::env::var_os(name).map(std::path::PathBuf::from).unwrap_or_else(|| root.join(inside));
+    let fork = given("EDITOR_FORK", "upstream/starlight");
+    let engine = crate::engine::Engine::load(&given("EDITOR_ENGINE", "src/Editor.Native/bin/r2r")).unwrap();
+    let path = |at: &std::path::Path| at.to_string_lossy().replace('\\', "/");
+    engine.start(&path(&fork), Some(&path(&given("EDITOR_PACK", "native/cache/kernel-resources.zip"))));
+    engine.wait_ready().unwrap();
+    let opened: serde_json::Value = engine.call("open", &serde_json::json!({ "path": path(&fork.join("Resources/Maps/_Starlight/Stations/Cork.yml")) })).unwrap();
+    let mut doc = Doc::from_scene(serde_json::from_value(opened["scene"].clone()).unwrap(), None);
+    let mut walls: Vec<&crate::model::Entity> = doc.entities.values().filter(|entity| entity.prototype == "WallSolid" && entity.anchored && doc.grid(entity.parent).is_some()).collect();
+    walls.sort_unstable_by_key(|entity| entity.uid);
+    let (uid, grid) = (walls[0].uid, walls[0].parent);
+    let cell = (walls[0].x.floor() as i32, walls[0].y.floor() as i32);
+    let mut call = |command: &str, ops: serde_json::Value| {
+        let answer: serde_json::Value = engine.call(command, &serde_json::json!({ "doc": doc.id, "label": "test", "merge": false, "ops": ops })).unwrap();
+        doc.apply(serde_json::from_value(answer["delta"].clone()).unwrap());
+        let wall = &doc.entities[&uid];
+        (wall.parent == grid, wall.anchored, doc.tile_at(grid, cell).to_owned())
+    };
+    // Its tile erased, the engine takes it off the grid. Moved back, it stands loose on the empty cell.
+    call("edit", serde_json::json!([{ "kind": "tile", "grid": grid, "x": cell.0, "y": cell.1 }]));
+    let middle = (cell.0 as f32 + 0.5, cell.1 as f32 + 0.5);
+    assert_eq!(call("edit", serde_json::json!([{ "kind": "move", "uid": uid, "parent": grid, "x": middle.0, "y": middle.1 }])), (true, false, SPACE.to_owned()));
+    // The fix: plating and the anchor op, in one edit.
+    let fix = serde_json::json!([{ "kind": "tile", "grid": grid, "x": cell.0, "y": cell.1, "tile": "Plating" }, { "kind": "anchor", "uid": uid }]);
+    assert_eq!(call("edit", fix), (true, true, "Plating".to_owned()));
+    assert_eq!(call("undo", serde_json::json!([])), (true, false, SPACE.to_owned()));
+    assert_eq!(call("redo", serde_json::json!([])), (true, true, "Plating".to_owned()));
+    println!("WallSolid {uid} at {cell:?}: laid, anchored, undone and redone");
 }

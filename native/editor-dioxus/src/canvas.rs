@@ -269,9 +269,14 @@ fn labels() -> Labels {
             let at = css(at);
             (at.0, at.1, entries)
         });
-        // Below and to the right of the cursor, or to its left near the map's right edge.
-        let icon = session.air_hover_icon().map(|(icon, colour)| icon_uri(icon, colour));
-        let air_box = session.air_hover().zip(session.hover).map(|(lines, world)| {
+        // Below and to the right of the cursor, or to its left near the map's right edge. Over a
+        // Problems badge, what is wrong there, before the air.
+        let problem = session.problem_hover();
+        let icon = match &problem {
+            Some(_) => Some(icon_uri(Icon::Bang, editor_core::air::LEAK)),
+            None => session.air_hover_icon().map(|(icon, colour)| icon_uri(icon, colour)),
+        };
+        let air_box = problem.or_else(|| session.air_hover()).zip(session.hover).map(|(lines, world)| {
             let at = css(world);
             let x = if at.0 + 16.0 + AIR_BOX_WIDTH > view.0 as f32 / scale { at.0 - 16.0 - AIR_BOX_WIDTH } else { at.0 + 16.0 };
             (x, at.1 + 16.0, icon, lines)
@@ -659,6 +664,9 @@ impl Widget for MapWidget {
                 if let Some(backdrop) = session.take_backdrop() {
                     gpu.renderer.set_backdrop(&gpu.device, &gpu.queue, &backdrop);
                 }
+                // The Problems overlay's badges go over everything else on the map.
+                let mut above = above;
+                above.extend_from_slice(session.problem_overlay(tile_pixels(session.camera.zoom, scale as f32)).1);
                 gpu.renderer.set_overlays(&under, &above);
                 let (air_version, air) = session.air_overlay(tile_pixels(session.camera.zoom, scale as f32));
                 gpu.renderer.set_air(air_version, air);
