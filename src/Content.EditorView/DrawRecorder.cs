@@ -241,9 +241,10 @@ public sealed class TextureRegistry
         {
             case SpriteSpecifier.Rsi rsi:
             {
-                var resource = cache.GetResource<RSIResource>(SpriteSpecifierSerializer.TextureRoot / rsi.RsiPath);
-                if (resource.RSI.TryGetState(rsi.RsiState, out var state))
-                    RegisterState(resource.RSI, state);
+                // An RSI or a state that is not there is drawn as the engine's error state
+                // (SpriteSystem.GetState).
+                var state = sprites.GetState(rsi);
+                RegisterState(state.RSI, state);
                 break;
             }
             case SpriteSpecifier.Texture texture:
@@ -261,16 +262,57 @@ public sealed class TextureRegistry
         }
     }
 
-    public void RegisterLayers(SpriteComponent sprite)
+    /// <summary>
+    /// Registers what a sprite's layers will draw with, as SpriteSystem.RenderLayer picks it: the
+    /// layer's state as the engine resolved it, which is the error state when the RSI has no
+    /// such state, or else the layer's own texture.
+    /// </summary>
+    public void RegisterLayers(SpriteComponent sprite, IResourceCache cache)
     {
         foreach (var item in sprite.AllLayers)
         {
             if (item is not SpriteComponent.Layer layer)
                 continue;
 
-            if (layer.ActualRsi is { } rsi && rsi.TryGetState(layer.State, out var state))
-                RegisterState(rsi, state);
+            if (layer.ActualState is { } state)
+                RegisterState(state.RSI, state);
+            else if (layer.Texture is { } texture)
+                RegisterTexture(texture, cache);
         }
+    }
+
+    /// <summary>The resource path of each texture loaded as a file, made when one is not found.</summary>
+    private Dictionary<Texture, string>? _texturePaths;
+
+    /// <summary>Textures with no file, so that they are not looked for again.</summary>
+    private readonly HashSet<Texture> _unnamed = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// A texture a layer was given whole, by its file. The layer keeps only the texture, so its
+    /// file is found among the textures the resource cache has loaded.
+    /// </summary>
+    private void RegisterTexture(Texture texture, IResourceCache cache)
+    {
+        if (_ids.ContainsKey(texture) || _unnamed.Contains(texture))
+            return;
+
+        if (_texturePaths == null || !_texturePaths.ContainsKey(texture))
+        {
+            _texturePaths = new Dictionary<Texture, string>(ReferenceEqualityComparer.Instance);
+            foreach (var (path, resource) in cache.GetAllResources<TextureResource>())
+                _texturePaths.TryAdd(resource.Texture, path.ToString());
+        }
+
+        // A texture made in code has no file, and is left out as before.
+        if (!_texturePaths.TryGetValue(texture, out var file))
+        {
+            _unnamed.Add(texture);
+            return;
+        }
+
+        var id = _sources.Count;
+        _ids[texture] = id;
+        _sources.Add(new TextureSource(id, file, null, 0, texture.Width, texture.Height));
     }
 
     private void RegisterState(RSI rsi, RSI.State state)

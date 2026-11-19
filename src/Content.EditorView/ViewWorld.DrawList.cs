@@ -34,6 +34,8 @@ public sealed partial class ViewWorld
     private const int DecalDepth = -1_000_000_000;
     private const int ChunkSize = 16;
     private const int TilePixels = 32;
+    /// <summary>The engine's image for a tile that has none of its own.</summary>
+    private const string NoTile = "/Textures/noTile.png";
 
     private readonly TextureRegistry _textures = new();
     private readonly IResourceCache _resources = IoCManager.Resolve<IResourceCache>();
@@ -143,7 +145,7 @@ public sealed partial class ViewWorld
                 continue;
             }
 
-            _textures.RegisterLayers(sprite);
+            _textures.RegisterLayers(sprite, _resources);
             var (position, rotation) = _xform.GetWorldPositionRotation(uid);
             try
             {
@@ -269,7 +271,7 @@ public sealed partial class ViewWorld
                     {
                         if (_entMan.TryGetComponent(uid, out SpriteComponent? sprite))
                         {
-                            _textures.RegisterLayers(sprite);
+                            _textures.RegisterLayers(sprite, _resources);
                             var kind = KindOf(uid);
                             for (; recorded < turns; recorded++)
                             {
@@ -352,14 +354,20 @@ public sealed partial class ViewWorld
 
             if (!_map.TryGetTile(grid, cell, out var tile))
                 tile = Tile.Empty;
-            if (!_tileDefs.TryGetDefinition(tile.TypeId, out var definition))
-                continue;
+            _tileDefs.TryGetDefinition(tile.TypeId, out var definition);
 
-            if (owner == chunk && !tile.IsEmpty && definition.Sprite is { } sprite)
+            if (owner == chunk && !tile.IsEmpty)
             {
-                var id = _textures.File(sprite.ToString(), Math.Min(tile.Variant, Math.Max(definition.Variants - 1, 0)), TilePixels, TilePixels);
-                AddTile(id, cell, definition.AllowRotationMirror ? tile.RotationMirroring : 0, matrix);
+                // The game draws its missing tile image for a tile with no image, or a variant
+                // its image does not have (Clyde.GridRendering.cs, ClydeTileDefinitionManager).
+                var id = definition?.Sprite is { } sprite && tile.Variant < definition.Variants
+                    ? _textures.File(sprite.ToString(), tile.Variant, TilePixels, TilePixels)
+                    : _textures.File(NoTile, 0, TilePixels, TilePixels);
+                AddTile(id, cell, definition is { AllowRotationMirror: true } ? tile.RotationMirroring : 0, matrix);
             }
+
+            if (definition == null)
+                continue;
 
             for (var nx = -1; nx <= 1; nx++)
             for (var ny = -1; ny <= 1; ny++)

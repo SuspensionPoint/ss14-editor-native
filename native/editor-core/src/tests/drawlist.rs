@@ -75,27 +75,13 @@ fn folding_repeats_the_frames_of_a_direction_with_fewer() {
 /// The frame each texture of an animated state stands for, as the engine side registers it,
 /// against the game's own folding of the state's delays. The arcades' screens have more
 /// frames facing south than the other ways, which the engine folds into one timeline.
-/// Needs a published engine side in src/Editor.Native/bin/r2r (or EDITOR_ENGINE), a fork with
-/// its resources in upstream/starlight (or EDITOR_FORK) and its pack in
-/// native/cache/kernel-resources.zip (or EDITOR_PACK).
+/// See [`engine_previews`] for what it needs.
 /// `cargo test -p editor-core --release rsi_frames -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn rsi_frames() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-    let from = |name: &str, default: &str| std::env::var_os(name).map(std::path::PathBuf::from).unwrap_or_else(|| root.join(default));
-    let fork = from("EDITOR_FORK", "upstream/starlight");
-    let engine = crate::engine::Engine::load(&from("EDITOR_ENGINE", "src/Editor.Native/bin/r2r")).unwrap();
-    let path = |path: &std::path::Path| path.to_string_lossy().replace('\\', "/");
-    engine.start(&path(&fork), Some(&path(&from("EDITOR_PACK", "native/cache/kernel-resources.zip"))));
-    engine.wait_ready().unwrap();
-
     // Space Invaders' screen is only on the abstract ArcadeBase, which has no preview.
-    let prototypes = ["SpaceVillainArcade", "BlockGameArcade", "LancerArcade"];
-    let items: Vec<Value> = prototypes.iter().enumerate().map(|(key, prototype)| json!({ "key": key, "prototype": prototype })).collect();
-    let _: Value = engine.call("previews", &json!({ "items": items, "directions": false })).unwrap();
-    let mut lists = DrawLists::default();
-    lists.apply(&engine.with_draw_list(PREVIEWS, <[u8]>::to_vec).unwrap()).unwrap();
+    let (fork, lists) = engine_previews(&["SpaceVillainArcade", "BlockGameArcade", "LancerArcade"]);
 
     let mut checked = 0;
     for (rsi, state) in [
@@ -114,10 +100,43 @@ fn rsi_frames() {
         let expected: Vec<u32> = folded_frames(&delays).into_iter().flatten().map(|frame| frame as u32).collect();
         println!("{state}: {registered:?}");
         assert_eq!(registered, expected, "{state}");
-        // Every frame is inside the image: the frames are laid out in rows as wide as the image.
+        // Every frame is one the image has.
         let frames: usize = delays.iter().map(Vec::len).sum();
         assert!(registered.iter().all(|&index| (index as usize) < frames));
         checked += 1;
     }
     assert_eq!(checked, 3);
+}
+
+/// A layer given a texture file, which the game draws, against what the engine side records
+/// for it. Starlight's StrippingHiddenEntity has one. See [`engine_previews`] for what it needs.
+/// `cargo test -p editor-core --release texture_layers -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn texture_layers() {
+    let (_, lists) = engine_previews(&["StrippingHiddenEntity"]);
+    let item = &lists.documents[&PREVIEWS].items[&0];
+    let drawn: Vec<String> = item.quads.chunks_exact(FLOATS_PER_QUAD).filter_map(|quad| lists.textures.get(&(quad[12] as u32))).map(|source| source.file()).collect();
+    assert_eq!(drawn, ["/Textures/Interface/VerbIcons/information.svg.192dpi.png"]);
+}
+
+/// Starts the published engine side on the fork, for the ignored tests here, and asks it how
+/// some prototypes look. It needs a published engine side in src/Editor.Native/bin/r2r (or
+/// EDITOR_ENGINE), a fork with its resources in upstream/starlight (or EDITOR_FORK) and its
+/// pack in native/cache/kernel-resources.zip (or EDITOR_PACK). Gives the fork's folder too.
+/// A process loads the engine once, so run these tests one at a time.
+fn engine_previews(prototypes: &[&str]) -> (std::path::PathBuf, DrawLists) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    let from = |name: &str, default: &str| std::env::var_os(name).map(std::path::PathBuf::from).unwrap_or_else(|| root.join(default));
+    let fork = from("EDITOR_FORK", "upstream/starlight");
+    let engine = crate::engine::Engine::load(&from("EDITOR_ENGINE", "src/Editor.Native/bin/r2r")).unwrap();
+    let path = |path: &std::path::Path| path.to_string_lossy().replace('\\', "/");
+    engine.start(&path(&fork), Some(&path(&from("EDITOR_PACK", "native/cache/kernel-resources.zip"))));
+    engine.wait_ready().unwrap();
+
+    let items: Vec<Value> = prototypes.iter().enumerate().map(|(key, prototype)| json!({ "key": key, "prototype": prototype })).collect();
+    let _: Value = engine.call("previews", &json!({ "items": items, "directions": false })).unwrap();
+    let mut lists = DrawLists::default();
+    lists.apply(&engine.with_draw_list(PREVIEWS, <[u8]>::to_vec).unwrap()).unwrap();
+    (fork, lists)
 }
