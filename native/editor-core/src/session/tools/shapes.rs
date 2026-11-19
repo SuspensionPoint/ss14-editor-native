@@ -27,8 +27,6 @@ pub(in crate::session) struct ShapeDrag {
     to: (i32, i32),
     /// None when nothing it can put down was chosen at the press. It sets nothing then.
     brush: Option<Brush>,
-    /// Whether it is the eraser's, which takes away what the brush is.
-    erase: bool,
 }
 
 /// The cells of a line from one cell to another, both ends included. This is the web
@@ -127,7 +125,7 @@ impl ShapeDrag {
 
     /// Its grid, its cells and the entity it puts down, if it puts one down.
     pub(super) fn entity_cells(&self) -> Option<(i32, Vec<(i32, i32)>, usize)> {
-        let (Some(Brush::Entity(index)), false) = (&self.brush, self.erase) else { return None };
+        let Some(Brush::Entity(index)) = &self.brush else { return None };
         Some((self.grid, self.cells(), *index))
     }
 }
@@ -140,8 +138,7 @@ impl Session {
         // nothing when it is let go.
         let brush = self.brush_for_press();
         if let Some((grid, cell)) = self.cell_at(world) {
-            let erase = self.tool == Tool::Erase;
-            self.drag = Drag::Shape(ShapeDrag { shape, grid, from: cell, to: cell, brush, erase });
+            self.drag = Drag::Shape(ShapeDrag { shape, grid, from: cell, to: cell, brush });
         }
     }
 
@@ -155,7 +152,7 @@ impl Session {
     pub(super) fn shape_up(&mut self, drag: ShapeDrag) {
         let Some(brush) = &drag.brush else { return };
         let cells = drag.cells();
-        self.put_shape(drag.grid, &cells, brush, drag.shape.labels(), drag.shape.name(), drag.erase);
+        self.put_shape(drag.grid, &cells, brush, drag.shape.labels(), drag.shape.name());
     }
 
     /// The cells of a shape being dragged, filled, for `overlay_quads`.

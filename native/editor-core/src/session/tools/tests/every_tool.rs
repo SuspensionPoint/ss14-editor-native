@@ -151,7 +151,7 @@ fn r_turns_clockwise_and_shift_r_the_other_way() {
 fn a_hint_stands_over_the_status_until_it_is_answered_or_a_message_takes_its_place() {
     let (mut session, _engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
-    session.set_tool(Tool::Fill);
+    session.set_tool(Tool::Room);
     session.set_status("Saved");
 
     // A press with no tile chosen asks for one, over what the line said.

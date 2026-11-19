@@ -9,6 +9,9 @@
 //! - Paint with a shape of Point is the session's Paint, or Place with Entities as the target.
 //!   Line, Rectangle and Circle are the session's Line, Rectangle and Circle.
 //! - Erase is the session's Erase, whatever the shape. The eraser reads its shape at the press.
+//!   It takes away everything of its target that can be seen, or with Only on just the kind in
+//!   hand (`ToolOptions::erase_only`).
+//! - Fill is the session's Fill, on any target.
 //! - Select with the Tiles target is the session's Area tool, a region of cells with everything
 //!   on them. Without it, it is the session's Select tool, for entities and decals.
 //! - Every other toolbar tool is the session's tool of the same name.
@@ -16,7 +19,8 @@
 //! The target is what Paint and Erase work on. It follows the palette: choosing a tile makes it
 //! Tiles. Setting it gives back what was last in hand for it (`Toolbox::recall`).
 //!
-//! The shapes and the select tool's targets are kept in the settings file (`ToolOptions`).
+//! The shapes, the select tool's targets, free placing and Erase's Only are kept in the
+//! settings file (`ToolOptions`).
 
 use serde::{Deserialize, Serialize};
 
@@ -98,8 +102,8 @@ impl BarTool {
         }
     }
 
-    /// Whether the options bar offers a target for it: Paint and Erase work on any of the
-    /// three, and Fill on tiles alone.
+    /// Whether the options bar offers a target for it: Paint, Erase and Fill work on any of
+    /// the three.
     pub fn has_target(self) -> bool {
         matches!(self, BarTool::Paint | BarTool::Erase | BarTool::Fill)
     }
@@ -204,7 +208,7 @@ impl SelectMode {
 
 /// What the select tool selects. With Tiles on it selects a region of cells, which takes
 /// everything on them along. With Tiles off it selects entities, decals or both. At least one
-/// of the three is always on.
+/// of the three is always on, and no switch is ever dead (`toggle`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SelectTargets {
@@ -229,18 +233,42 @@ impl SelectTargets {
         }
     }
 
-    /// Switches a target on or off. The last one on stays on, and gives back false.
-    pub fn toggle(&mut self, target: Target) -> bool {
-        let mut next = *self;
+    /// Whether the options bar shows a target as on. With Tiles on the region takes
+    /// everything, so Entities and Decals show off, and pressing one leaves the region for it.
+    pub fn lit(self, target: Target) -> bool {
         match target {
-            Target::Tiles => next.tiles ^= true,
-            Target::Entities => next.entities ^= true,
-            Target::Decals => next.decals ^= true,
+            Target::Tiles => self.tiles,
+            Target::Entities | Target::Decals => !self.tiles && self.has(target),
         }
-        if !(next.tiles || next.entities || next.decals) {
-            return false;
+    }
+
+    /// A press of a target's switch. Tiles goes on or off. Off, it gives back Entities and
+    /// Decals as they were, or both if neither was on. With Tiles on, Entities or Decals turns
+    /// Tiles off and selects that one alone. With Tiles off they go on and off, and the last
+    /// one on stays on, which gives back false.
+    pub fn toggle(&mut self, target: Target) -> bool {
+        match target {
+            Target::Tiles => {
+                self.tiles ^= true;
+                if !(self.tiles || self.entities || self.decals) {
+                    (self.entities, self.decals) = (true, true);
+                }
+            }
+            Target::Entities | Target::Decals if self.tiles => {
+                *self = SelectTargets { entities: target == Target::Entities, decals: target == Target::Decals, tiles: false };
+            }
+            Target::Entities | Target::Decals => {
+                let mut next = *self;
+                match target {
+                    Target::Entities => next.entities ^= true,
+                    _ => next.decals ^= true,
+                }
+                if !(next.entities || next.decals) {
+                    return false;
+                }
+                *self = next;
+            }
         }
-        *self = next;
         true
     }
 }
@@ -252,9 +280,12 @@ pub struct ToolOptions {
     pub paint_shape: Shape,
     pub erase_shape: Shape,
     pub select: SelectTargets,
-    /// Whether Paint puts an entity where the cursor is and not on the middle of a cell.
-    /// Shift does the other for one press.
-    pub entity_free: bool,
+    /// Whether Paint at a point puts an entity or a decal where the cursor is, and not on its
+    /// cell. Shift does the other for one press.
+    #[serde(alias = "entity_free")]
+    pub place_free: bool,
+    /// Whether Erase takes away only the kind in hand, and not everything of its target.
+    pub erase_only: bool,
 }
 
 /// What a tool key does when the tool in hand has not taken it.

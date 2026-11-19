@@ -613,3 +613,7 @@ fn app() -> Element {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/main.rs"]
+mod tests;

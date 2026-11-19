@@ -170,14 +170,15 @@ impl Session {
 
     /// Where the place tool would put the chosen prototype for a cursor at `world`: the
     /// parent (a grid, or the map), the position in the parent's coordinates, and on the map,
-    /// and how the parent is turned. With Shift held it is the cursor, unless the prototype is
-    /// anchored by default, which goes on the middle of its cell all the same. Off every
-    /// grid's tiles it is the map, except for a prototype that a tile is laid under
+    /// and how the parent is turned. With Snap to cell it is the middle of the cell under the
+    /// cursor, whatever the prototype. Placed freely (`places_free`) it is the cursor, unless
+    /// the prototype is anchored by default, which goes on the middle of its cell all the same.
+    /// Off every grid's tiles it is the map, except for a prototype that a tile is laid under
     /// (`floor_for`), which goes on the grid the tile tools would paint.
     pub(super) fn place_target(&self, world: (f32, f32)) -> Option<(i32, (f32, f32), (f32, f32), f32)> {
         let doc = self.doc.as_ref()?;
         let prototype = self.chosen_prototype()?;
-        let snaps = if self.places_free() { prototype.anchored } else { prototype.snaps() };
+        let snaps = !self.places_free() || prototype.anchored;
         let snap = |local: (f32, f32)| if snaps { (local.0.floor() + 0.5, local.1.floor() + 0.5) } else { local };
         let floored = || self.floor_for(prototype).and_then(|_| doc.grid_at(world));
         Some(match doc.grid_with_tile_at(world).or_else(floored) {
@@ -233,9 +234,8 @@ impl Session {
     }
 
     /// The place tool was pressed: places the chosen prototype under it and begins a row,
-    /// which goes on only for a prototype that sits on cells, pressed without Shift. A press
-    /// with Shift of one that is anchored by default says on the status line why it keeps to
-    /// its cell.
+    /// which goes on only with Snap to cell, pressed without Shift. A press placing freely of
+    /// one that is anchored by default says on the status line why it keeps to its cell.
     pub(super) fn place_down(&mut self, world: (f32, f32)) {
         if self.chosen_entity().is_none() {
             self.hint = Some(Hint::Entity);
@@ -247,7 +247,7 @@ impl Session {
             let status = format!("{} is anchored, so it goes in the middle of its cell", prototype.id);
             self.set_status(status);
         }
-        let row = !self.places_free() && self.chosen_prototype().is_some_and(Prototype::snaps);
+        let row = !self.places_free();
         self.drag = Drag::Place(PlaceDrag { stroke, placed, row, last: world });
     }
 

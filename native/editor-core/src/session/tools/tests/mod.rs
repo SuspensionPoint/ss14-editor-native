@@ -11,6 +11,7 @@ mod backdrops;
 mod decal_select;
 mod decals;
 mod entity;
+mod erase;
 mod every_tool;
 mod favourites;
 mod floors;

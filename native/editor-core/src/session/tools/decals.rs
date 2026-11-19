@@ -17,15 +17,12 @@ pub struct DecalSettings {
     /// How it is turned, in radians.
     pub angle: f64,
     pub z_index: i32,
-    /// Whether a click puts it on the corner of the cell under the cursor. Off, or with Shift
-    /// held, its middle goes on the cursor.
-    pub snap: bool,
     pub cleanable: bool,
 }
 
 impl Default for DecalSettings {
     fn default() -> Self {
-        DecalSettings { color: None, angle: 0.0, z_index: 0, snap: true, cleanable: false }
+        DecalSettings { color: None, angle: 0.0, z_index: 0, cleanable: false }
     }
 }
 
@@ -241,10 +238,11 @@ impl Session {
 
     // ---- placing ----
 
-    /// Whether the paint tool puts a decal down freely, with its middle on the cursor: snap is
-    /// off in the settings, or Shift is held. The shapes always go by cells.
+    /// Whether the paint tool puts a decal down freely, with its middle on the cursor: the
+    /// toolbar's Free, as for entities, or the other way with Shift held (`places_free`). The
+    /// shapes always go by cells.
     pub(super) fn decal_free(&self) -> bool {
-        !self.decaling.settings.snap || self.held.shift
+        self.places_free()
     }
 
     /// A new decal of a prototype with its lower left corner at a place of a grid, with the
@@ -273,9 +271,11 @@ impl Session {
     }
 
     /// Asks for a decal of a prototype on the corner of each of these cells of a grid, as one
-    /// edit. Decals may stack, so a cell that holds one already gets another, as in the web
-    /// editor. A cell with no tile is skipped, since the engine refuses a decal there, as is one
-    /// in `placed`. The cells it puts one on go into `placed`.
+    /// edit. A cell with no tile is skipped, since the engine refuses a decal there, as is one
+    /// in `placed`. The cells it puts one on go into `placed`. Decals may stack: a shape, a fill
+    /// and a stroke past the cell pressed put the cells that hold one already in `placed`
+    /// first (`decals_held`), as an entity's brush skips a cell that holds it, and a click puts
+    /// one on whatever is there.
     pub(super) fn put_decals(&mut self, grid_uid: i32, cells: &[(i32, i32)], id: &str, label: &'static str, stroke: Option<u64>, placed: &mut HashSet<(i32, i32)>) {
         let Some(doc) = self.doc.as_mut() else { return };
         let Some(grid) = doc.grids.iter().find(|grid| grid.uid == grid_uid) else { return };
@@ -286,15 +286,25 @@ impl Session {
         self.edit(ops, label, stroke, false);
     }
 
-    /// Asks for the decals of a prototype on these cells of a grid to be removed: those whose
-    /// lower left corner is in one of them, as the web editor finds them.
-    pub(super) fn delete_decals_on(&mut self, grid_uid: i32, cells: &[(i32, i32)], id: &str, label: &'static str, stroke: Option<u64>) {
+    /// The cells of a grid that hold a decal of a prototype: those its lower left corner is in.
+    pub(super) fn decals_held(&self, grid: i32, id: &str) -> HashSet<(i32, i32)> {
+        let Some(grid) = self.doc.as_ref().and_then(|doc| doc.grid(grid)) else { return HashSet::new() };
+        grid.decals.values().filter(|decal| decal.prototype == id).map(decal_cell).collect()
+    }
+
+    /// Asks for the decals on these cells of a grid to be removed: those whose lower left corner
+    /// is in one of them, as the web editor finds them, all of them or with `only` those of a
+    /// prototype. None while the decal layer is hidden.
+    pub(super) fn delete_decals_on(&mut self, grid_uid: i32, cells: &[(i32, i32)], only: Option<&str>, stroke: Option<u64>) {
+        if !self.layers.decals {
+            return;
+        }
         let Some(grid) = self.doc.as_ref().and_then(|doc| doc.grid(grid_uid)) else { return };
         let cells: HashSet<(i32, i32)> = cells.iter().copied().collect();
-        let mut ids: Vec<i32> = grid.decals.values().filter(|decal| decal.prototype == id && cells.contains(&decal_cell(decal))).map(|decal| decal.id).collect();
+        let mut ids: Vec<i32> = grid.decals.values().filter(|decal| only.is_none_or(|id| decal.prototype == id) && cells.contains(&decal_cell(decal))).map(|decal| decal.id).collect();
         ids.sort_unstable();
         let ops = ids.into_iter().map(|decal| json!({ "kind": "decal.remove", "grid": grid_uid, "uid": decal })).collect();
-        self.edit(ops, label, stroke, false);
+        self.edit(ops, "Erase decals", stroke, false);
     }
 
     /// Places one decal with its middle on the cursor, as one edit. The engine wants a tile

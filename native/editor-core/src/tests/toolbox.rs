@@ -109,11 +109,29 @@ fn the_last_select_target_stays_on() {
     assert!(targets.toggle(Target::Entities));
     assert!(!targets.toggle(Target::Decals));
     assert_eq!(targets, SelectTargets { entities: false, decals: true, tiles: false });
-    // Another on first lets it go.
+    // Tiles on and off again gives back what was on.
     assert!(targets.toggle(Target::Tiles));
+    assert!(targets.toggle(Target::Tiles));
+    assert_eq!(targets, SelectTargets { entities: false, decals: true, tiles: false });
+}
+
+#[test]
+fn no_select_target_switch_is_dead_with_tiles_on() {
+    let mut targets = SelectTargets::default();
+    assert!(targets.toggle(Target::Tiles));
+    // The region takes everything, so only Tiles shows on.
+    assert_eq!(Target::ALL.map(|target| targets.lit(target)), [true, false, false]);
+    // Entities or Decals pressed then leave the region for that one alone.
     assert!(targets.toggle(Target::Decals));
-    assert_eq!(targets, SelectTargets { entities: false, decals: false, tiles: true });
-    assert!(targets.has(Target::Tiles) && !targets.has(Target::Decals));
+    assert_eq!(targets, SelectTargets { entities: false, decals: true, tiles: false });
+    assert_eq!(Target::ALL.map(|target| targets.lit(target)), [false, false, true]);
+    assert!(targets.toggle(Target::Tiles));
+    assert!(targets.toggle(Target::Entities));
+    assert_eq!(targets, SelectTargets { entities: true, decals: false, tiles: false });
+    // Tiles off with neither of the others on before gives both.
+    let mut region = SelectTargets { entities: false, decals: false, tiles: true };
+    assert!(region.toggle(Target::Tiles));
+    assert_eq!(region, SelectTargets::default());
 }
 
 #[test]
@@ -184,7 +202,7 @@ fn each_target_gives_back_what_was_last_in_hand_for_it() {
 
 #[test]
 fn the_options_read_back_from_their_settings_text() {
-    let options = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Rectangle, select: SelectTargets { entities: false, decals: true, tiles: true }, entity_free: true };
+    let options = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Rectangle, select: SelectTargets { entities: false, decals: true, tiles: true }, place_free: true, erase_only: true };
     let text = serde_json::to_string(&options).unwrap();
     assert!(text.contains("\"circle\""), "{text}");
     assert_eq!(serde_json::from_str::<ToolOptions>(&text).unwrap(), options);

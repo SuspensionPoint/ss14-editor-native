@@ -109,10 +109,14 @@ pub(crate) fn follow_target(editor: &mut Editor) {
     }
 }
 
+/// The options bar. Every part of it that reads the editor calls `watch`, as this does: a
+/// component with no props is never drawn again because its parent was, so a part that read
+/// the editor without it kept showing the state it first drew with.
 #[component]
 pub(crate) fn OptionsBar() -> Element {
     let _ = watch();
     let (bar, target, shape) = with(|editor| (editor.session.bar_tool(), editor.session.target(), editor.session.shape()));
+    let point = shape == Some(Shape::Point);
     rsx! {
         div { class: "options-bar",
             onmousedown: move |event| event.stop_propagation(),
@@ -120,25 +124,28 @@ pub(crate) fn OptionsBar() -> Element {
             div { class: "options-rule" }
             match bar {
                 BarTool::Paint | BarTool::Erase | BarTool::Fill => rsx! {
-                    TargetChoices { bar, target }
+                    TargetChoices { target }
                     if let Some(shape) = shape {
                         div { class: "options-rule" }
                         ShapeChoices { shape }
                     }
+                    if bar == BarTool::Paint && target != Target::Tiles && point {
+                        div { class: "options-rule" }
+                        PlaceChoices {}
+                    }
                     if bar == BarTool::Paint && target == Target::Entities {
                         div { class: "options-rule" }
-                        EntityOptions {}
+                        crate::placing::WallPlacement {}
                     }
                     if bar == BarTool::Paint && target == Target::Decals {
                         div { class: "options-rule" }
                         DecalOptions {}
                     }
-                    if bar == BarTool::Fill {
-                        span { class: "hint-text", "Fills the area of the same tile, up to 50,000 tiles" }
+                    if bar == BarTool::Erase {
+                        div { class: "options-rule" }
+                        EraseOptions {}
                     }
-                    if bar == BarTool::Erase && target != Target::Tiles {
-                        span { class: "hint-text", "Removes only the kind in hand" }
-                    }
+                    span { class: "hint-text", "{target_hint(bar, target, point)}" }
                 },
                 BarTool::Select => rsx! { SelectOptions {} },
                 BarTool::Room => rsx! { crate::placing::RoomOptions {} },
@@ -152,10 +159,27 @@ pub(crate) fn OptionsBar() -> Element {
     }
 }
 
-/// What Paint, Erase and Fill work on. Fill works on tiles alone.
+/// The line of help after the options of Paint, Erase and Fill, for their target. Paint of
+/// tiles, and of entities at a point, says nothing more than its options do.
+fn target_hint(bar: BarTool, target: Target, point: bool) -> &'static str {
+    match (bar, target) {
+        (BarTool::Paint, Target::Tiles) => "",
+        (BarTool::Paint, Target::Entities) if point => "",
+        (BarTool::Paint, Target::Entities) => "Skips cells with no tile. Walls get one if Tile under walls is on",
+        (BarTool::Paint, Target::Decals) => "Skips cells with no tile",
+        (BarTool::Erase, Target::Tiles) => "Entities and decals stay",
+        (BarTool::Erase, Target::Entities) => "Removes what you can see. Hide a layer in Layers to keep what's on it",
+        (BarTool::Erase, Target::Decals) => "Removes the decals in the shape while the decal layer shows",
+        (BarTool::Fill, Target::Tiles) => "Fills the area of the same tile, up to 50,000 tiles",
+        (BarTool::Fill, _) => "One per cell over the area of the same floor, up to 10,000 cells",
+        _ => "",
+    }
+}
+
+/// What Paint, Erase and Fill work on.
 #[component]
-fn TargetChoices(bar: BarTool, target: Target) -> Element {
-    let items: Vec<Choice> = Target::ALL.iter().map(|&each| Choice { icon: Some(target_icon(each)), text: each.name(), on: each == target, enabled: bar != BarTool::Fill || each == Target::Tiles }).collect();
+fn TargetChoices(target: Target) -> Element {
+    let items: Vec<Choice> = Target::ALL.iter().map(|&each| Choice::new(target_icon(each), each.name(), each == target)).collect();
     rsx! {
         Choices { label: "Target", items,
             onpick: move |at: usize| {
@@ -180,21 +204,45 @@ fn ShapeChoices(shape: Shape) -> Element {
     }
 }
 
-/// Paint on entities: on the middle of a cell or where the cursor is, and the tile laid under
-/// new walls.
+/// Paint at a point on entities or decals: on the cell under the cursor or where the cursor is.
+/// Shift does the other for one click.
 #[component]
-fn EntityOptions() -> Element {
-    let free = with(|editor| editor.session.entity_free());
+fn PlaceChoices() -> Element {
+    let _ = watch();
+    let free = with(|editor| editor.session.place_free());
     let items = vec![Choice { icon: None, text: "Snap to cell", on: !free, enabled: true }, Choice { icon: None, text: "Free", on: free, enabled: true }];
     rsx! {
         Choices { label: "Place", items,
             onpick: move |at: usize| {
-                with(|editor| editor.session.set_entity_free(at == 1));
+                with(|editor| editor.session.set_place_free(at == 1));
                 bump();
             }
         }
-        div { class: "options-rule" }
-        crate::placing::WallPlacement {}
+    }
+}
+
+/// Erase's Only: take away just the kind in hand, named on the switch.
+#[component]
+fn EraseOptions() -> Element {
+    let _ = watch();
+    let (only, named, target) = with(|editor| (editor.session.erase_only(), editor.session.erase_only_id(), editor.session.target()));
+    let text = match (named, target) {
+        (Some(id), _) => format!("Only {id}"),
+        (None, Target::Tiles) => "Only the tile in hand".to_owned(),
+        (None, Target::Entities) => "Only the entity in hand".to_owned(),
+        (None, Target::Decals) => "Only the decal in hand".to_owned(),
+    };
+    rsx! {
+        label { class: "option-check",
+            input { r#type: "checkbox", class: "check", checked: only,
+                oninput: move |event| {
+                    let on = event.checked();
+                    with(|editor| editor.session.set_erase_only(on));
+                    bump();
+                }
+            }
+            "{text}"
+        }
     }
 }
 
@@ -202,6 +250,7 @@ fn EntityOptions() -> Element {
 /// has no colour picker.
 #[component]
 fn DecalOptions() -> Element {
+    let _ = watch();
     let settings = with(|editor| editor.session.decal_settings().clone());
     let set = |change: Box<dyn FnOnce(&mut editor_core::session::DecalSettings)>| {
         with(|editor| {
@@ -232,10 +281,6 @@ fn DecalOptions() -> Element {
         span { class: "options-label", "Z" }
         div { class: "option-number", NumberField { value: settings.z_index.to_string(), onchange: move |value: f64| set(Box::new(move |settings| settings.z_index = value.round() as i32)) } }
         label { class: "option-check",
-            input { r#type: "checkbox", class: "check", checked: settings.snap, oninput: move |event| { let on = event.checked(); set(Box::new(move |settings| settings.snap = on)); } }
-            "Snap"
-        }
-        label { class: "option-check",
             input { r#type: "checkbox", class: "check", checked: settings.cleanable, oninput: move |event| { let on = event.checked(); set(Box::new(move |settings| settings.cleanable = on)); } }
             "Cleanable"
         }
@@ -244,15 +289,17 @@ fn DecalOptions() -> Element {
 
 /// What Select selects, its shape, and whether a press replaces the selection, adds to it or
 /// takes from it. With Tiles on it selects a region of cells, which takes everything on them,
-/// so Entities and Decals wait till Tiles is off.
+/// so Entities and Decals show off, and a press of either leaves the region for that one alone
+/// (`SelectTargets::toggle`).
 #[component]
 fn SelectOptions() -> Element {
+    let _ = watch();
     let (targets, mode, region) = with(|editor| (editor.session.select_targets(), editor.session.select_mode(), editor.session.region_size()));
     let order = [Target::Entities, Target::Decals, Target::Tiles];
-    let items: Vec<Choice> = order.iter().map(|&each| Choice { icon: Some(target_icon(each)), text: each.name(), on: targets.has(each) && (each == Target::Tiles || !targets.tiles), enabled: each == Target::Tiles || !targets.tiles }).collect();
+    let items: Vec<Choice> = order.iter().map(|&each| Choice::new(target_icon(each), each.name(), targets.lit(each))).collect();
     let modes: Vec<Choice> = SelectMode::ALL.iter().map(|&each| Choice::new(mode_icon(each), each.name(), each == mode)).collect();
     let hint = match (targets.tiles, region) {
-        (true, 0) => "A region takes everything on its cells".to_owned(),
+        (true, 0) => "A region takes everything on its cells. Pick Entities or Decals to select only those".to_owned(),
         (true, cells) => format!("{cells} cells. Right-click the region to copy, cut, delete or save it as a prefab"),
         (false, _) => "Shift adds and Ctrl subtracts for one click".to_owned(),
     };
@@ -310,6 +357,7 @@ fn rgb((red, green, blue): (u8, u8, u8)) -> String {
 /// The kind of cable the cable tool lays. A kind the fork does not have is greyed.
 #[component]
 fn CableOptions() -> Element {
+    let _ = watch();
     let cables: Vec<(CableKind, bool, bool)> = with(|editor| {
         let session = &editor.session;
         CableKind::ALL.into_iter().map(|kind| (kind, session.cable_kind() == kind, session.cable_available(kind))).collect()
@@ -331,6 +379,7 @@ fn CableOptions() -> Element {
 /// colour for a gas pipe, or none for the prototype's own.
 #[component]
 fn PipeOptions() -> Element {
+    let _ = watch();
     let (gas, disposal, network, current) = with(|editor| {
         let session = &editor.session;
         (session.pipe_network_available(PipeNetwork::Gas), session.pipe_network_available(PipeNetwork::Disposal), session.pipe_network(), session.pipe_colour().map(str::to_owned))

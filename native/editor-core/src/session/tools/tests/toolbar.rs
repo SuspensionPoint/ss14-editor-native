@@ -103,17 +103,18 @@ fn a_target_with_nothing_in_hand_empties_the_palette_and_a_press_asks_for_one() 
 }
 
 #[test]
-fn fill_and_room_work_on_tiles_and_take_the_last_tile_back() {
+fn fill_keeps_its_target_and_room_takes_the_last_tile_back() {
     let (mut session, _engine) = Session::offline(&scene());
     session.choose_tile("FloorWood");
     choose(&mut session, "SnapgridCenter");
     session.take_bar_tool(BarTool::Fill);
-    assert_eq!((session.target(), session.palette()), (Target::Tiles, &Palette::Tile("FloorWood".into())));
-    // Fill refuses another target.
+    assert_eq!((session.target(), session.palette(), session.tool()), (Target::Entities, &Palette::Entity(0), Tool::Fill));
+    // Its target goes to tiles and back as Paint's does, and takes back what was in hand.
+    session.set_target(Target::Tiles);
+    assert_eq!((session.target(), session.palette(), session.tool()), (Target::Tiles, &Palette::Tile("FloorWood".into()), Tool::Fill));
     session.set_target(Target::Entities);
-    assert_eq!((session.target(), session.tool()), (Target::Tiles, Tool::Fill));
+    assert_eq!((session.target(), session.palette(), session.tool()), (Target::Entities, &Palette::Entity(0), Tool::Fill));
 
-    choose(&mut session, "SnapgridCenter");
     session.take_bar_tool(BarTool::Room);
     assert_eq!(session.chosen_tile(), Some("FloorWood"));
 }
@@ -142,6 +143,7 @@ fn erase_in_a_line_or_circle_with_an_entity_chosen_deletes_that_prototype() {
     session.set_prototypes(vec![Prototype { id: "Chair".into(), name: "chair".into(), placement_mode: "SnapgridCenter".into(), ..Default::default() }]);
     session.take_bar_tool(BarTool::Erase);
     session.choose_entity(0);
+    session.set_erase_only(true);
     session.set_shape(Shape::Line);
     drag(&mut session, (0, 1), (2, 1));
     let edits = edits(&engine);
@@ -217,7 +219,7 @@ fn the_add_and_subtract_modes_do_what_shift_and_ctrl_do() {
 fn free_places_where_the_cursor_is_and_shift_snaps_for_a_press() {
     let (mut session, engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
-    session.set_entity_free(true);
+    session.set_place_free(true);
     click(&mut session, (2.25, 3.75));
     session.held.shift = true;
     click(&mut session, (4.25, 3.75));
@@ -255,13 +257,13 @@ fn the_options_are_kept_in_the_settings_file() {
     session.set_shape(Shape::Line);
     session.take_bar_tool(BarTool::Select);
     session.toggle_select_target(Target::Decals);
-    session.set_entity_free(true);
+    session.set_place_free(true);
     // The mode is not kept.
     session.set_select_mode(SelectMode::Subtract);
 
     let read = Settings::load(&file);
     assert!(read.animate_sprites);
-    let kept = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Line, select: SelectTargets { entities: true, decals: false, tiles: false }, entity_free: true };
+    let kept = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Line, select: SelectTargets { entities: true, decals: false, tiles: false }, place_free: true, erase_only: false };
     assert_eq!(read.tools, kept);
 
     // A session reads them back.

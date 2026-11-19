@@ -62,7 +62,7 @@
 //! options, and each stands for one of the tools here (`Toolbox::tool_for`). Paint at a point
 //! is Paint, or Place on entities. Paint in a shape is Line, Rectangle or Circle. Erase is
 //! Erase in every shape, and reads its shape at the press (`erase_down`). Select with Tiles is
-//! Area, and without it Select. `toolbar.rs` takes a toolbar tool in hand through `set_tool`,
+//! Area, and without it Select. Fill is Fill on any target. `toolbar.rs` takes a toolbar tool in hand through `set_tool`,
 //! which notes the tool in the toolbox, so the toolbar shows what is in hand however it came.
 //! The target, what Paint and Erase work on, follows the palette: each choice notes itself
 //! as last in hand for its kind (`chosen`), and setting the target takes that back.
@@ -72,13 +72,14 @@
 //! and by a tool alike, and read through `chosen_tile`, `chosen_entity` (the index),
 //! `chosen_prototype` and `chosen_decal`. Each makes its kind the target and may change the
 //! tool, to Paint in its shape (`take_bar_tool`). A tile keeps a tool that puts tiles down. An
-//! entity keeps the eraser, the shapes and the select tool. A decal keeps a brush that takes
-//! an entity. The fields `tool` and `palette`
+//! entity keeps the eraser, Fill, the shapes and the select tool. A decal keeps a brush that
+//! takes an entity. The fields `tool` and `palette`
 //! are private, read with `tool()` and `palette()`. A drag of a brush reads the palette once, at
-//! the press, into a `tiles::Brush` (`brush_for_press`), a tile's id or an entity's index, and
-//! carries it. A change of the palette during the drag changes nothing of it.
+//! the press, into a `tiles::Brush` (`brush_for_press`), a tile's id, an entity's index, a
+//! decal's id or what the eraser takes, and carries it. A change of the palette or the options
+//! during the drag changes nothing of it.
 //!
-//! **Entities from the brushes.** Paint, Erase, Rectangle, Line and Circle work with an entity
+//! **Entities from the brushes.** Paint, Fill, Rectangle, Line and Circle work with an entity
 //! chosen as well as a tile. They put one down in the middle of each cell, unturned, as the place tool sends it.
 //! A cell with no tile is skipped, as is a cell that holds an entity of that prototype or that
 //! the same drag has put one on, since the mirror is behind the engine. The one exception is
@@ -86,17 +87,31 @@
 //! laying a tile under walls is switched on, as it is by default. On a cell with no tile the
 //! tile is laid first, in the same edit, so it is the same step to undo. The place tool does
 //! the same, and puts such an entity on the grid the tile tools would paint where no grid has
-//! a tile. The tile is Plating or the one the mapper picked (`floors.rs`). The eraser deletes
-//! the entities of that prototype on the cells it crosses and leaves the tiles: children of the
-//! grid that are inside nothing. A shape of entities is refused past 10,000 cells. Fill knows
-//! tiles alone.
+//! a tile. The tile is Plating or the one the mapper picked (`floors.rs`). A shape of entities
+//! is refused past 10,000 cells. Fill puts one on each cell of the area of the same tile under
+//! the cursor, as a shape does, up to 10,000 cells and never on an area of space. The place
+//! tool, Paint at a point, puts one on the middle of the cell under the cursor with Snap to
+//! cell, and lays a row as it is dragged. With Free, or Shift for one press, it puts one where
+//! the cursor is and lays no row, unless the prototype is anchored by default.
+//!
+//! **The eraser.** Erase takes away everything of its target on the cells it crosses or the
+//! shape covers (`tiles::Erasing`): tiles, or entities, or decals, and leaves the other two.
+//! The entities are the children of the grid that are inside nothing, so never the grid, the
+//! map or what is on the map, and what they hold goes with them as with Delete. It takes those
+//! drawn on a shown layer, as a box of the select tool finds them, so a mapper can hide walls
+//! and erase the rest (`erasable`). Decals go only while their layer shows. With Only on
+//! (`ToolOptions::erase_only`) it takes just the kind in hand, an entity of that prototype
+//! even where the map does not draw it, but never on a hidden layer. With Only on and nothing
+//! of its target in hand, a press asks for one. A stroke is one step to undo, and a shape one
+//! edit. A shape of entities or decals past 10,000 cells is refused.
 //!
 //! **Decals from the brushes.** The same brushes work with a decal chosen (`decals.rs`). They
 //! put one on the lower left corner of each cell with a tile, with the placement settings of
-//! the moment (`DecalSettings`). Decals stack, so a cell that holds one gets another, and only
-//! the same drag skips a cell. A press of Paint with snap off in the settings, or with Shift,
+//! the moment (`DecalSettings`). As for entities, a shape, a fill and a stroke past the cell
+//! pressed skip a cell that holds one of it already (`decals_held`), and a click puts one on
+//! whatever is there. A press of Paint with Free, the option entities have, or with Shift,
 //! puts one decal with its middle on the cursor and begins no stroke. The shapes always go by
-//! cells. The eraser removes the decals of that prototype whose corner is in a cell it crosses.
+//! cells. The eraser removes the decals whose corner is in a cell it crosses.
 //! The engine refuses a decal with no tile under its corner, and a refusal takes the whole
 //! edit back, so no such op is sent. Paint, Rectangle, Line and Circle draw a ghost of the
 //! decal where a press would put it (`decal_overlay`).
@@ -142,9 +157,9 @@
 //! Space is held, while a dialog is open (`dialog_open`) or off the map (`ghost_hover`). The
 //! tile's ghost shows during no drag at all.
 //!
-//! **Hints.** Fill only knows a tile, the other brushes a tile or an entity, and the place tool
-//! only an entity. A press that finds nothing its tool can use chosen sets `hint`, which is a
-//! `Hint` and not a text. `status_line`
+//! **Hints.** The brushes ask for something of their target, the place tool for an entity,
+//! and the eraser with Only on for the kind it should keep to. A press that finds nothing its
+//! tool can use chosen sets `hint`, which is a `Hint` and not a text. `status_line`
 //! shows a hint that stands, and `status` stays as it was underneath. A choice of either kind
 //! takes the hint away. So does a new message, and every message goes through `set_status`.
 //!
@@ -343,14 +358,14 @@ pub enum Tool {
 /// Every key and gesture of the editor and what it does, as the list of controls shows them.
 /// A tool's row is under its key alone, which is how `ToolEntry::control` finds it.
 pub const CONTROLS: &[(&str, &str)] = &[
-    ("V", "Select: click or drag a box to select. The options bar says what it selects: entities, decals, or with Tiles a region of cells with everything on them. Drag what's selected to move it. V selects entities and decals"),
+    ("V", "Select: click or drag a box to select. The options bar says what it selects: entities, decals, or with Tiles a region of cells with everything on them. With Tiles on, pick Entities or Decals to select only those. Drag what's selected to move it. V selects entities and decals"),
     ("S", "Select with Tiles: drag out a region of cells, one box at a time. Drag the region to move it with everything on it. Right-click it for its menu"),
     ("H", "Pan: drag the map"),
     ("I", "Pick: takes what's under the cursor into the palette, top first: an entity, then a decal with its settings, then the tile. The target follows it. Over a stack, the wheel steps through what's there and a click takes that row"),
-    ("B", "Paint: puts the chosen tile, entity or decal down in the shape the options bar says. At a point, tiles and decals go on each cell you drag over, and entities go one per cell, turned as R turned them. Walls, windows, grilles and doors also go where there's no tile and get a tile laid under them. You can switch that off in the options bar"),
+    ("B", "Paint: puts the chosen tile, entity or decal down in the shape the options bar says. At a point, tiles go on each cell you drag over. Entities and decals go one per cell, skipping cells that already have one, or with Free one where the cursor is. Entities turn as R turned them. Shapes skip cells with no tile, but walls, windows, grilles and doors get a tile laid under them. You can switch that off in the options bar"),
     ("P", "Paint entities at a point: places the chosen entity, one per cell as you drag"),
-    ("E", "Erase: removes tiles in the shape the options bar says. With an entity or decal chosen it removes those of that kind and leaves the tiles"),
-    ("G", "Fill: fills the area of the same tile under the cursor, up to 50,000 tiles"),
+    ("E", "Erase: removes everything of its target in the shape the options bar says: tiles, entities or decals. Entities on a hidden layer stay, and so do decals while their layer is hidden. Only removes just the kind in hand. Each stroke is one undo step"),
+    ("G", "Fill: fills the area of the same tile under the cursor, up to 50,000 tiles. With entities or decals, puts one on each cell of that floor that doesn't have one, up to 10,000 cells"),
     ("R", "Paint a rectangle: drag it out, up to 10,000 cells of entities or decals. With something to turn in hand, R turns it instead: a quarter clockwise for the selection, the entity Paint places, the region or the paste ghost, and the placement angle of a decal"),
     ("L", "Paint a line: drag it out, up to 10,000 cells of entities or decals"),
     ("C", "Paint a circle: drag out a filled circle from the cell you press to the cursor's cell, up to 10,000 cells of entities or decals"),
@@ -360,7 +375,7 @@ pub const CONTROLS: &[(&str, &str)] = &[
     ("J", "Pipes: drag a path of the chosen pipe, each piece fitted to the cells it joins. Start or end on a pipe to join it. Right-drag removes pipes and refits the ones next to them"),
     ("Shift+R", "Turns a quarter the other way, where R turns"),
     ("R held, wheel", "With Select, or Paint placing an entity, turns five degrees per notch. With a decal chosen and Paint in hand, turns its placement angle the same way"),
-    ("Shift+click", "Paint on entities: place where the cursor is, or on the cell when Free is on. Select: add to the selection, or take a selected one out. Pasting: stamp with the middle of the ghost's first cell on the cursor"),
+    ("Shift+click", "Paint on entities or decals: place where the cursor is, or on the cell when Free is on. Select: add to the selection, or take a selected one out. Pasting: stamp with the middle of the ghost's first cell on the cursor"),
     ("Shift+drag", "Select: move unanchored things exactly with the cursor, or drag a box that adds to the selection or the region. The Add mode in the options bar does the same"),
     ("Ctrl+click, Ctrl+drag", "Select: remove an entity, or a box of them, from the selection, or a box from the region. The Subtract mode in the options bar does the same"),
     ("Right-click", "Select: clear the selection or close the wheel's list. On a region, open its menu, and off it, clear the region. Pasting: stop pasting. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
@@ -422,22 +437,22 @@ impl Tool {
         }
     }
 
-    /// Whether the tool's brush works with an entity or a decal chosen: it puts it down, or the
-    /// eraser deletes those of its prototype. Fill does not: it is a tile tool alone.
+    /// Whether the tool's brush works with an entity or a decal chosen: it puts it down, fills
+    /// an area with it, or for the eraser's Only names what it takes away.
     fn brushes_entities(self) -> bool {
         match self {
-            Tool::Paint | Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle => true,
-            Tool::Pan | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Paint | Tool::Erase | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle => true,
+            Tool::Pan | Tool::Pick | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
         }
     }
 
-    /// Whether the tool stays in hand when an entity is chosen: the eraser and the shapes, which
-    /// work with one, and the select tool. Any other is put down for Paint in its shape, which
-    /// at a point is the place tool. The place tool is taken in hand again.
+    /// Whether the tool stays in hand when an entity is chosen: the eraser, Fill and the shapes,
+    /// which work with one, and the select tool. Any other is put down for Paint in its shape,
+    /// which at a point is the place tool. The place tool is taken in hand again.
     fn keeps_entity_choice(self) -> bool {
         match self {
-            Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Select => true,
-            Tool::Pan | Tool::Paint | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Erase | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Select => true,
+            Tool::Pan | Tool::Paint | Tool::Pick | Tool::Room | Tool::Area | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => false,
         }
     }
 
@@ -457,15 +472,21 @@ pub(super) enum Hint {
     Tile,
     Entity,
     Decal,
+    /// Erase with Only on, and nothing of its target in hand.
+    EraseOnly(crate::toolbox::Target),
 }
 
 impl Hint {
     /// What the status line says while the hint stands.
     pub(super) fn text(self) -> &'static str {
+        use crate::toolbox::Target;
         match self {
             Hint::Tile => "Choose a tile to paint",
             Hint::Entity => "Choose an entity to place",
             Hint::Decal => "Choose a decal to place",
+            Hint::EraseOnly(Target::Tiles) => "Choose a tile to erase, or turn off Only",
+            Hint::EraseOnly(Target::Entities) => "Choose an entity to erase, or turn off Only",
+            Hint::EraseOnly(Target::Decals) => "Choose a decal to erase, or turn off Only",
         }
     }
 }

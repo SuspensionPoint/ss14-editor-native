@@ -80,7 +80,7 @@ impl Session {
             .map(|entity| Pickable::Entity(entity.prototype.clone()))
             .collect();
         for decal in decals.into_iter().filter_map(|key| self.decal(key)).filter(|decal| self.decal_prototype(&decal.prototype).is_some()) {
-            let settings = DecalSettings { color: decal.color.clone(), angle: decal.angle, z_index: decal.z_index, snap: true, cleanable: decal.cleanable };
+            let settings = DecalSettings { color: decal.color.clone(), angle: decal.angle, z_index: decal.z_index, cleanable: decal.cleanable };
             entries.push(Pickable::Decal(decal.prototype.clone(), settings));
         }
         if let Some(grid) = doc.grid_at(world) {
@@ -96,7 +96,7 @@ impl Session {
     /// hand, and a tile with `choose_tile`, which takes Paint. A prototype with no place in
     /// the palette is chosen as well, since it is chosen by its index among them all. A decal
     /// is chosen with `choose_decal`, which takes Paint, and its colour, angle, z-index and
-    /// cleanable become the placement settings. Snap stays as it was.
+    /// cleanable become the placement settings. Free placing stays as it was.
     fn take_picked(&mut self, picked: Pickable) {
         match &picked {
             Pickable::Entity(id) => match self.prototype_indices.get(id).copied() {
@@ -105,8 +105,7 @@ impl Session {
             },
             Pickable::Decal(id, settings) => {
                 self.choose_decal(id);
-                let snap = self.decal_settings().snap;
-                self.set_decal_settings(DecalSettings { snap, ..settings.clone() });
+                self.set_decal_settings(settings.clone());
             }
             Pickable::Tile(id) => self.choose_tile(id),
         }

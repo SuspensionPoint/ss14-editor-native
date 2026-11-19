@@ -209,11 +209,11 @@ fn picking_a_tile_ends_a_drag_and_goes_to_the_paint_tool() {
 }
 
 #[test]
-fn fill_with_an_entity_chosen_hints_for_a_tile() {
+fn the_room_tool_with_an_entity_chosen_hints_for_a_tile() {
     let (mut session, engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
     assert_eq!((session.chosen_tile(), session.chosen_entity()), (None, Some(0)));
-    session.set_tool(Tool::Fill);
+    session.set_tool(Tool::Room);
     session.set_status("Opened");
     click(&mut session, (0.5, 0.5));
     // The press says why nothing comes of it.
@@ -324,6 +324,7 @@ fn a_stroke_of_entities_is_one_stroke() {
 fn erase_with_an_entity_chosen_deletes_that_prototype_and_leaves_the_tile() {
     let (mut session, engine) = Session::offline(&scene());
     choose_id(&mut session, "Chair");
+    session.set_erase_only(true);
     session.set_tool(Tool::Erase);
     assert_eq!(session.chosen_entity(), Some(0));
     // Over the chair, on and back. The mirror still has it, and it is asked for once.
@@ -337,16 +338,21 @@ fn erase_with_an_entity_chosen_deletes_that_prototype_and_leaves_the_tile() {
     assert_eq!((erased[0].0, &erased[0].2), ("Erase entities", &vec![json!({ "kind": "delete", "uid": CHAIR })]));
     assert!(erased[0].1.is_some());
 
-    // Erase with a tile chosen takes tiles away as before.
+    // Erase with a tile chosen takes tiles away: none with Only on, since the cell is steel,
+    // and the steel with it off.
     session.choose_tile("FloorWood");
     session.set_tool(Tool::Erase);
+    click(&mut session, (0.5, 0.5));
+    assert!(edits(&engine).iter().all(|edit| edit.2.is_empty()));
+    session.set_erase_only(false);
     click(&mut session, (0.5, 0.5));
     assert_eq!(labels(&edits(&engine)), ["Erase tiles"]);
 }
 
 #[test]
-fn erase_leaves_other_prototypes_and_contained_entities() {
+fn erase_with_only_on_leaves_other_prototypes_and_contained_entities() {
     let (mut session, engine) = Session::offline(&scene());
+    session.set_erase_only(true);
     // The crowbar is inside the wall.
     choose_id(&mut session, "Crowbar");
     session.set_tool(Tool::Erase);
@@ -415,9 +421,9 @@ fn a_rectangle_of_more_than_ten_thousand_entities_is_refused() {
 }
 
 #[test]
-fn choosing_an_entity_keeps_a_brush_in_hand_and_leaves_fill_for_place() {
+fn choosing_an_entity_keeps_a_brush_or_fill_in_hand_and_leaves_the_rest_for_place() {
     let (mut session, _engine) = Session::offline(&scene());
-    for tool in [Tool::Erase, Tool::Rectangle, Tool::Line, Tool::Circle, Tool::Select] {
+    for tool in [Tool::Erase, Tool::Fill, Tool::Rectangle, Tool::Line, Tool::Circle, Tool::Select] {
         session.set_tool(tool);
         choose(&mut session, "SnapgridCenter");
         assert_eq!(session.tool(), tool);
@@ -425,7 +431,7 @@ fn choosing_an_entity_keeps_a_brush_in_hand_and_leaves_fill_for_place() {
     // Paint's shape is a point after this, so Paint on entities is the place tool. Paint at a
     // point with an entity chosen is the place tool too.
     session.set_tool(Tool::Paint);
-    for tool in [Tool::Pan, Tool::Paint, Tool::Pick, Tool::Fill, Tool::Area, Tool::Place] {
+    for tool in [Tool::Pan, Tool::Paint, Tool::Pick, Tool::Area, Tool::Place] {
         session.set_tool(tool);
         choose(&mut session, "SnapgridCenter");
         assert_eq!(session.tool(), Tool::Place, "{tool:?}");
@@ -552,4 +558,46 @@ fn the_chosen_tile_shows_half_seen_through_where_a_press_would_begin() {
     session.choose_tile("FloorDark");
     session.pointer_move(at(&session, (2.25, 3.75)), VIEW);
     assert!(session.overlay_quads().0.is_empty());
+}
+
+#[test]
+fn fill_with_an_entity_puts_one_on_each_cell_of_the_floor_that_lacks_it() {
+    let (mut session, engine) = Session::offline(&scene());
+    choose_id(&mut session, "Chair");
+    session.set_tool(Tool::Fill);
+    click(&mut session, (0.5, 0.5));
+
+    let edits = edits(&engine);
+    assert_eq!((labels(&edits), edits[0].1), (vec!["Fill entities"], None));
+    // Every cell of the six by six floor but the chair's own.
+    let put = spawned(&edits[0].2, "Chair");
+    assert_eq!(put.len(), 35);
+    assert!(!put.contains(&(1.5, 1.5)));
+}
+
+#[test]
+fn fill_with_an_entity_or_a_decal_refuses_space_and_an_area_past_ten_thousand() {
+    let (mut session, engine) = Session::offline(&scene());
+    choose_id(&mut session, "Chair");
+    session.set_tool(Tool::Fill);
+    click(&mut session, (-2.5, 0.5));
+    assert!(asked(&engine).is_empty());
+    assert_eq!(session.status_line(), "Not filled: entities and decals fill a floor, not space");
+
+    let (mut session, engine) = Session::offline(&floor_of(10_001));
+    choose_id(&mut session, "Chair");
+    session.set_tool(Tool::Fill);
+    click(&mut session, (0.5, 0.5));
+    assert!(asked(&engine).is_empty());
+    assert_eq!(session.status_line(), "Not filled: the area has more than 10,000 cells");
+}
+
+#[test]
+fn fill_with_nothing_in_hand_for_its_target_asks_for_one() {
+    let (mut session, engine) = Session::offline(&scene());
+    session.take_bar_tool(crate::toolbox::BarTool::Fill);
+    session.set_target(crate::toolbox::Target::Decals);
+    click(&mut session, (0.5, 0.5));
+    assert!(asked(&engine).is_empty());
+    assert_eq!(session.status_line(), "Choose a decal to place");
 }
