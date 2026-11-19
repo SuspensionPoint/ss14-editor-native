@@ -46,6 +46,10 @@ pub struct TextureSource {
     pub index: u32,
     pub width: u32,
     pub height: u32,
+    /// Of a frame of an animated state: the frame that follows it, the last followed by the
+    /// first, and how many seconds it shows for. None and 0 for anything else.
+    pub next: Option<u32>,
+    pub delay: f32,
 }
 
 impl TextureSource {
@@ -204,7 +208,7 @@ impl DrawLists {
         }
         let id = LOCAL_TEXTURES + self.local.len() as u32;
         self.local.insert((path.to_owned(), index), id);
-        self.textures.insert(id, TextureSource { path: path.to_owned(), state: None, index, width, height });
+        self.textures.insert(id, TextureSource { path: path.to_owned(), state: None, index, width, height, next: None, delay: 0.0 });
         id
     }
 
@@ -226,6 +230,9 @@ impl DrawLists {
                     index: texture["index"].as_u64().unwrap_or(0) as u32,
                     width: texture["width"].as_u64().unwrap_or(0) as u32,
                     height: texture["height"].as_u64().unwrap_or(0) as u32,
+                    // Older engine builds do not say.
+                    next: texture["next"].as_u64().map(|next| next as u32),
+                    delay: texture["delay"].as_f64().unwrap_or(0.0) as f32,
                 },
             );
         }

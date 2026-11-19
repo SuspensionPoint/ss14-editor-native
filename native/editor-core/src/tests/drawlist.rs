@@ -140,3 +140,20 @@ fn engine_previews(prototypes: &[&str]) -> (std::path::PathBuf, DrawLists) {
     lists.apply(&engine.with_draw_list(PREVIEWS, <[u8]>::to_vec).unwrap()).unwrap();
     (fork, lists)
 }
+
+#[test]
+fn a_frame_of_an_animated_state_names_the_next_and_its_delay() {
+    let header = json!({ "doc": 1, "full": true, "items": [], "textures": [
+        { "id": 4, "path": "/Textures/a.rsi", "state": "spin", "index": 0, "width": 32, "height": 32, "next": 5, "delay": 0.25 },
+        { "id": 6, "path": "/Textures/b.png", "state": null, "index": 0, "width": 32, "height": 32 },
+    ] })
+    .to_string();
+    let mut message = b"DRW1".to_vec();
+    message.extend((header.len() as i32).to_le_bytes());
+    message.extend(header.as_bytes());
+    let mut lists = DrawLists::default();
+    lists.apply(&message).unwrap();
+    assert_eq!((lists.textures[&4].next, lists.textures[&4].delay), (Some(5), 0.25));
+    // A still image, or an older engine build, says neither.
+    assert_eq!((lists.textures[&6].next, lists.textures[&6].delay), (None, 0.0));
+}

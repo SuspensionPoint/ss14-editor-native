@@ -16,6 +16,11 @@
 //! On request it also draws two things of its own around the map ([`MapRenderer::set_surround`]):
 //! the game's backdrop behind it, and the grid lines between cells over it.
 //!
+//! With animation on ([`MapRenderer::set_animated`]), each rectangle of an animated sprite moves
+//! through its state's frames by time ([`MapRenderer::animate`], `crate::animation`). Only the
+//! rectangles whose frame changed are written again. With it off, every rectangle shows the
+//! frame the engine recorded.
+//!
 //! The renderer doesn't own a window or a frame. It draws into a texture it is handed, so the
 //! same code works in a bare window and inside an interface toolkit's canvas.
 
@@ -23,6 +28,7 @@ use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::animation::Cycles;
 use crate::backdrop::{Backdrop, Placing};
 use crate::drawlist::{DrawLists, Item, FLOATS_PER_QUAD, KIND_DECALS, KIND_DISPOSALS, KIND_MARKER, KIND_PLUMBING, KIND_SUBFLOOR, KIND_TILES, WHITE_TEXTURE};
 use crate::textures::{BakedTextures, Sheet};
@@ -311,6 +317,9 @@ pub struct MapRenderer {
     scratch: Vec<f32>,
     /// Where each item's rectangles are in the buffer: offset and length, in floats.
     ranges: HashMap<i32, (usize, usize)>,
+    /// The texture the engine recorded for each rectangle of the buffer, one per rectangle.
+    scratch_ids: Vec<u32>,
+    animation: Animation,
     under: Overlay,
     over: Overlay,
     overlays_stale: bool,
@@ -442,6 +451,8 @@ impl MapRenderer {
             built: None,
             scratch: Vec::new(),
             ranges: HashMap::new(),
+            scratch_ids: Vec::new(),
+            animation: Animation::default(),
             under: Overlay::default(),
             over: Overlay::default(),
             overlays_stale: false,
@@ -963,11 +974,11 @@ impl MapRenderer {
         // the buffer. This holds when each changed item still has as many rectangles as before.
         if patch {
             let doc = &lists.documents[&document];
-            let mut patches: Vec<(usize, Vec<f32>)> = Vec::with_capacity(changed.len());
+            let mut patches: Vec<(usize, Vec<f32>, Vec<u32>)> = Vec::with_capacity(changed.len());
             for id in &changed {
-                let converted = doc.items.get(id).map(|item| self.convert_item(item, &mut prepared.missing)).unwrap_or_default();
+                let (converted, ids) = doc.items.get(id).map(|item| self.convert_item(item, &mut prepared.missing)).unwrap_or_default();
                 match self.ranges.get(id) {
-                    Some(&(offset, length)) if length == converted.len() => patches.push((offset, converted)),
+                    Some(&(offset, length)) if length == converted.len() => patches.push((offset, converted, ids)),
                     None if converted.is_empty() => {}
                     _ => {
                         rebuild = true;
@@ -976,10 +987,13 @@ impl MapRenderer {
                 }
             }
             if !rebuild {
-                for (offset, converted) in patches {
+                for (offset, converted, ids) in patches {
                     self.scratch[offset..offset + converted.len()].copy_from_slice(&converted);
+                    let first = offset / FLOATS_PER_QUAD;
+                    self.scratch_ids[first..first + ids.len()].copy_from_slice(&ids);
                     queue.write_buffer(&self.instances, (offset * 4) as u64, bytemuck::cast_slice(&converted));
                 }
+                self.animation.stale = true;
                 prepared.rebuilt = true;
             } else {
                 prepared.missing = 0;
@@ -991,13 +1005,16 @@ impl MapRenderer {
             let doc = lists.documents.get_mut(&document).unwrap();
             let order: Vec<i32> = doc.in_draw_order().to_vec();
             self.scratch.clear();
+            self.scratch_ids.clear();
             self.ranges.clear();
             self.tiles_end = 0;
+            self.animation.stale = true;
             for id in order {
                 let item = &doc.items[&id];
-                let converted = self.convert_item(item, &mut prepared.missing);
+                let (converted, ids) = self.convert_item(item, &mut prepared.missing);
                 self.ranges.insert(id, (self.scratch.len(), converted.len()));
                 self.scratch.extend_from_slice(&converted);
+                self.scratch_ids.extend_from_slice(&ids);
                 if item.kind == KIND_TILES {
                     self.tiles_end = (self.scratch.len() / FLOATS_PER_QUAD) as u32;
                 }
@@ -1055,25 +1072,128 @@ impl MapRenderer {
         prepared
     }
 
-    fn convert_item(&self, item: &Item, missing: &mut u32) -> Vec<f32> {
-        self.convert(&item.quads, group_of(item.kind, item.depth), missing)
+    /// An item's rectangles as the GPU takes them, with the texture each was recorded with.
+    fn convert_item(&self, item: &Item, missing: &mut u32) -> (Vec<f32>, Vec<u32>) {
+        let mut ids = Vec::with_capacity(item.quads.len() / FLOATS_PER_QUAD);
+        let converted = self.convert_with(&item.quads, group_of(item.kind, item.depth), missing, Some(&mut ids));
+        (converted, ids)
     }
 
     /// Rectangles as the GPU takes them: the texture id turned into an atlas layer (with the
     /// map layer above it) and the source rectangle moved to the frame's place in the atlas.
     /// Rectangles whose image is not in the atlas are left out and counted.
     fn convert(&self, quads: &[f32], group: u32, missing: &mut u32) -> Vec<f32> {
+        self.convert_with(quads, group, missing, None)
+    }
+
+    fn convert_with(&self, quads: &[f32], group: u32, missing: &mut u32, mut ids: Option<&mut Vec<u32>>) -> Vec<f32> {
         let mut converted = Vec::with_capacity(quads.len());
         for quad in quads.chunks_exact(FLOATS_PER_QUAD) {
-            let Some(rect) = self.atlas.rects.get(&(quad[12] as u32)) else {
+            let id = quad[12] as u32;
+            let Some(rect) = self.atlas.rects.get(&id) else {
                 *missing += 1;
                 continue;
             };
             converted.extend_from_slice(&quad[..12]);
             converted.push((rect.layer + group * 256) as f32);
             converted.extend_from_slice(&[rect.x as f32 + quad[13], rect.y as f32 + quad[14], rect.x as f32 + quad[15], rect.y as f32 + quad[16]]);
+            if let Some(ids) = ids.as_deref_mut() {
+                ids.push(id);
+            }
         }
         converted
+    }
+
+    /// Turns animation on or off. Off puts every rectangle back to the frame the engine
+    /// recorded, and from then on nothing moves.
+    pub fn set_animated(&mut self, queue: &wgpu::Queue, on: bool) {
+        if self.animation.on == on {
+            return;
+        }
+        self.animation.on = on;
+        // After the buffer was written again, it shows the recorded frames already.
+        let stale = std::mem::replace(&mut self.animation.stale, true);
+        let moving = std::mem::take(&mut self.animation.moving);
+        if !on && !stale {
+            for quad in moving {
+                if quad.shown != quad.recorded {
+                    self.show_frame(queue, &quad, quad.recorded);
+                }
+            }
+        }
+    }
+
+    /// Moves each animated sprite of the buffer to the frame it shows `seconds` into the
+    /// editor's clock, writing only the rectangles whose frame changed. Returns whether an
+    /// animated sprite is inside `view` (min x, min y, max x, max y, in world tiles), so that
+    /// the caller asks for another frame only then. Does nothing with animation off.
+    pub fn animate(&mut self, queue: &wgpu::Queue, lists: &DrawLists, textures: &BakedTextures, seconds: f32, view: (f32, f32, f32, f32)) -> bool {
+        if !self.animation.on {
+            return false;
+        }
+        if self.animation.stale {
+            self.animation.stale = false;
+            self.find_moving(queue, lists, textures);
+        }
+
+        let mut visible = false;
+        let mut moving = std::mem::take(&mut self.animation.moving);
+        for quad in &mut moving {
+            let at = quad.offset;
+            let (x, y) = ((self.scratch[at] + self.scratch[at + 4]) / 2.0, (self.scratch[at + 1] + self.scratch[at + 5]) / 2.0);
+            visible |= x >= view.0 && x <= view.2 && y >= view.1 && y <= view.3;
+            let Some((cycle, place)) = self.animation.cycles.of(&lists.textures, quad.recorded) else { continue };
+            let frame = cycle.frame_after(place, seconds);
+            if frame != quad.shown && self.atlas.rects.contains_key(&frame) {
+                self.show_frame(queue, quad, frame);
+                quad.shown = frame;
+            }
+        }
+        self.animation.moving = moving;
+        visible
+    }
+
+    /// The rectangles of the buffer whose texture is a frame of an animated state, and every
+    /// frame of their states placed in the atlas. A frame that does not fit is left out, and
+    /// its rectangles skip it.
+    fn find_moving(&mut self, queue: &wgpu::Queue, lists: &DrawLists, textures: &BakedTextures) {
+        self.animation.moving.clear();
+        let mut frames = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (index, &id) in self.scratch_ids.iter().enumerate() {
+            let Some((cycle, _)) = self.animation.cycles.of(&lists.textures, id) else { continue };
+            let Some(rect) = self.atlas.rects.get(&id) else { continue };
+            let offset = index * FLOATS_PER_QUAD;
+            let quad = &self.scratch[offset..offset + FLOATS_PER_QUAD];
+            let (x, y) = (rect.x as f32, rect.y as f32);
+            self.animation.moving.push(Moving {
+                offset,
+                recorded: id,
+                shown: id,
+                group: (quad[12] as u32).saturating_sub(rect.layer) / 256,
+                region: [quad[13] - x, quad[14] - y, quad[15] - x, quad[16] - y],
+            });
+            for frame in &cycle.frames {
+                if !self.atlas.rects.contains_key(frame) && !self.atlas.missing.contains(frame) && seen.insert(*frame) {
+                    frames.push(*frame);
+                }
+            }
+        }
+        // A full atlas is made bigger only when the map itself needs it.
+        let _ = self.place_ids(queue, lists, textures, frames);
+    }
+
+    /// Writes one rectangle of the buffer with another frame of its state.
+    fn show_frame(&mut self, queue: &wgpu::Queue, quad: &Moving, frame: u32) {
+        let Some(rect) = self.atlas.rects.get(&frame) else { return };
+        let (x, y) = (rect.x as f32, rect.y as f32);
+        let at = quad.offset;
+        if at + FLOATS_PER_QUAD > self.scratch.len() {
+            return;
+        }
+        let part = [(rect.layer + quad.group * 256) as f32, x + quad.region[0], y + quad.region[1], x + quad.region[2], y + quad.region[3]];
+        self.scratch[at + 12..at + 17].copy_from_slice(&part);
+        queue.write_buffer(&self.instances, ((at + 12) * 4) as u64, bytemuck::cast_slice(&part));
     }
 
     /// Returns how many frames were placed, or None if the atlas ran out of room. `scope` says
@@ -1105,6 +1225,11 @@ impl MapRenderer {
             }
         }
 
+        self.place_ids(queue, lists, textures, wanted)
+    }
+
+    /// Places these frames in the atlas. Returns how many were placed, or None if it ran out of room.
+    fn place_ids(&mut self, queue: &wgpu::Queue, lists: &DrawLists, textures: &BakedTextures, mut wanted: Vec<u32>) -> Option<u32> {
         // Frames of one image are placed together, so the image is decompressed once.
         wanted.sort_unstable_by(|a, b| lists.textures.get(a).map(|t| t.file()).cmp(&lists.textures.get(b).map(|t| t.file())));
         let mut sheet: Option<(String, Option<Sheet>)> = None;
@@ -1255,6 +1380,28 @@ impl MapRenderer {
 }
 
 /// Which of a document's items to look through for frames that are not in the atlas yet.
+/// Animated sprites in the buffer, while animation is on.
+#[derive(Default)]
+struct Animation {
+    on: bool,
+    /// The buffer changed since the moving rectangles were found.
+    stale: bool,
+    cycles: Cycles,
+    moving: Vec<Moving>,
+}
+
+/// A rectangle of the buffer whose texture is a frame of an animated state.
+struct Moving {
+    /// Where it is in the buffer, in floats.
+    offset: usize,
+    /// The frame the engine recorded, and the one shown now.
+    recorded: u32,
+    shown: u32,
+    group: u32,
+    /// The part of the frame it shows, in pixels from the frame's corner.
+    region: [f32; 4],
+}
+
 enum Scope<'a> {
     Document,
     Items(&'a [i32]),

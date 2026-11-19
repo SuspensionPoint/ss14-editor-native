@@ -199,7 +199,14 @@ public sealed record TextureSource(
     /// <summary>Which frame of the state's sheet, counting directions first and then frames.</summary>
     int Index,
     int Width,
-    int Height);
+    int Height,
+    /// <summary>
+    /// Of a frame of an animated state: the texture of the frame that follows it in its
+    /// direction, the last one followed by the first, and how many seconds it shows for. Null
+    /// and 0 for anything else.
+    /// </summary>
+    int? Next = null,
+    float Delay = 0);
 
 /// <summary>
 /// Gives every texture the engine draws with a small number and remembers which image file it
@@ -339,22 +346,52 @@ public sealed class TextureRegistry
         // so a direction repeats an image frame for as long as it lasts. Each repeat is a texture
         // of its own, cut from the same place of the sheet, and the repeats come one after
         // another. So the count moves on only when the place a frame is cut from changes.
+        //
+        // The delays are those of the folded timeline, one for each frame of every direction
+        // (RSI.State.GetDelays), which the client's sprite steps through by time
+        // (SpriteComponent.Layer.AdvanceFrameAnimation).
         var index = -1;
+        var delays = state.GetDelays();
+        var animated = state.IsAnimated;
         for (var direction = 0; direction < directions; direction++)
         {
             Texture? previous = null;
-            foreach (var frame in state.GetFrames((RsiDirection) direction))
+            var frames = state.GetFrames((RsiDirection) direction);
+            var ids = new int[frames.Length];
+            var places = new int[frames.Length];
+            for (var i = 0; i < frames.Length; i++)
             {
+                var frame = frames[i];
                 if (previous == null || !SamePlace(previous, frame))
                     index++;
                 previous = frame;
+                places[i] = index;
+                if (!_ids.TryGetValue(frame, out ids[i]))
+                    ids[i] = -1;
+            }
 
-                if (!_ids.ContainsKey(frame))
-                {
-                    var id = _sources.Count;
-                    _ids[frame] = id;
-                    _sources.Add(new TextureSource(id, rsi.Path.ToString(), state.StateId.Name, index, frame.Width, frame.Height));
-                }
+            // New ids first, in the order they are added, so that each frame can name the one after it.
+            var nextId = _sources.Count;
+            var fresh = new Dictionary<Texture, int>(ReferenceEqualityComparer.Instance);
+            for (var i = 0; i < frames.Length; i++)
+            {
+                if (ids[i] >= 0)
+                    continue;
+
+                if (!fresh.TryGetValue(frames[i], out ids[i]))
+                    fresh[frames[i]] = ids[i] = nextId++;
+            }
+
+            for (var i = 0; i < frames.Length; i++)
+            {
+                var frame = frames[i];
+                if (_ids.ContainsKey(frame))
+                    continue;
+
+                _ids[frame] = ids[i];
+                int? next = animated && frames.Length > 1 ? ids[(i + 1) % frames.Length] : null;
+                var delay = animated && i < delays.Length ? delays[i] : 0;
+                _sources.Add(new TextureSource(ids[i], rsi.Path.ToString(), state.StateId.Name, places[i], frame.Width, frame.Height, next, delay));
             }
         }
     }

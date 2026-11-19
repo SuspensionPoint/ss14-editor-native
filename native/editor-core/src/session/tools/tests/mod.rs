@@ -5,6 +5,7 @@ use crate::drawlist::{KIND_DISPOSALS, KIND_ENTITY, KIND_PLUMBING, KIND_SUBFLOOR}
 
 mod air;
 mod air_fix;
+mod animate;
 mod area;
 mod backdrops;
 mod decal_select;

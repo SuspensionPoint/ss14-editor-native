@@ -61,6 +61,7 @@ public static partial class VisualsCheck
                     list.Items[uid] = item;
                 StatesDrawn(session, scene, list, say, tally);
                 DecalsDrawn(session, scene, yaml, list, say, tally);
+                FramesLinked(list, say, tally);
                 ValveClosed(session, scene, list, say, tally);
             }
             finally
@@ -263,6 +264,44 @@ public static partial class VisualsCheck
         var drawable = scene.Grids.Sum(grid => grid.Decals.Count(decal => prototypes.Contains(decal.Prototype)));
         var drawn = list.Items.Values.Where(item => item.Kind == 2).Sum(item => item.Quads.Count);
         tally.Expect(drawn == drawable, $"each of {drawable} decals of a prototype the game has is drawn, of {sent} sent: {drawn} drawn");
+    }
+
+    /// <summary>
+    /// Each frame of an animated state names the next one and how long it shows, so that the
+    /// editor can move the sprite through them: following the links from any frame comes back
+    /// to it through frames of the same state alone, each showing for some time.
+    /// </summary>
+    private static void FramesLinked(DrawList list, Action<string> say, Tally tally)
+    {
+        var linked = list.Textures.Where(pair => pair.Value.Next != null).ToList();
+        if (linked.Count == 0)
+        {
+            CheckSkips.Skip(say, "animated frames: none drawn");
+            return;
+        }
+
+        var broken = new List<string>();
+        var states = new HashSet<(string, string?)>();
+        foreach (var (id, source) in linked)
+        {
+            states.Add((source.Path, source.State));
+            var at = id;
+            var steps = 0;
+            do
+            {
+                var here = list.Textures.GetValueOrDefault(at);
+                if (here?.Next is not { } next || here.Path != source.Path || here.State != source.State || here.Delay <= 0 || ++steps > 1000)
+                {
+                    broken.Add($"{source.Path}/{source.State} frame {id}");
+                    break;
+                }
+
+                at = next;
+            } while (at != id);
+        }
+
+        tally.Expect(broken.Count == 0,
+            $"each of {linked.Count} frames of {states.Count} animated states leads round its state and back{(broken.Count > 0 ? ": " + string.Join("; ", broken.Take(4)) : "")}");
     }
 
     /// <summary>A valve closed through its component data is drawn closed, and undo opens it again.</summary>

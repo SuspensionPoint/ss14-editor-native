@@ -37,6 +37,7 @@ the editor loads the same way on a server.
 - **Problems** in the Layers panel marks those mistakes on the map as you work. Hover a mark
   to see what is wrong.
 - **Layers**, including SubFloor, Plumbing, Disposals and a T-Ray view.
+- Things look as the map saves them, so doors, valves and filters keep their state. View > **Animate sprites** makes animated sprites move. It's off until you turn it on.
 - Entity search, favourites, undo and redo. Help > Controls lists every key.
 
 ## Which forks work
