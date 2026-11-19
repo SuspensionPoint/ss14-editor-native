@@ -76,12 +76,44 @@ internal sealed partial class ComponentEditor
         return array.ToJsonString();
     }
 
+    /// <summary>
+    /// Components the view places or leaves out itself, whose saved data it is not sent: where
+    /// an entity is and what it is called (the scene says), what it holds (the view shows
+    /// nothing inside a container), and its body and joints (nothing is drawn of them).
+    /// </summary>
+    private static readonly HashSet<string> NotSent = ["Transform", "MetaData", "ContainerContainer", "Physics", "Fixtures", "Joint"];
+
+    private readonly Dictionary<Type, bool> _networked = new();
+
+    /// <summary>
+    /// Per component the game's server sends its clients (those marked NetworkedComponent), what
+    /// the entity saves beyond its prototype, as a map file holds it. A client is sent the
+    /// server's copy of each such component, and its own systems dress the entity by it. The
+    /// components of <see cref="NotSent"/> are left out.
+    /// </summary>
+    /// <param name="listed">Only these components, when the rest are known to be as the prototype has them.</param>
+    public List<(string Name, MappingDataNode Node)> Sent(EntityUid uid, IReadOnlySet<string>? listed = null) =>
+        Delta(uid, includeReserved: false, registration => (listed == null || listed.Contains(registration.Name)) && IsSent(registration));
+
+    /// <summary>Whether a component of this name is one whose saved data <see cref="Sent"/> gives.</summary>
+    public bool IsSent(string name) => _factory.TryGetRegistration(name, out var registration) && IsSent(registration);
+
+    private bool IsSent(ComponentRegistration registration)
+    {
+        if (NotSent.Contains(registration.Name))
+            return false;
+
+        if (!_networked.TryGetValue(registration.Type, out var networked))
+            _networked[registration.Type] = networked = registration.Type.IsDefined(typeof(Robust.Shared.GameStates.NetworkedComponentAttribute), inherit: true);
+        return networked;
+    }
+
     /// <summary>Per component, what differs from the prototype. Same logic as the game's map save.</summary>
-    private List<(string Name, MappingDataNode Node)> Delta(EntityUid uid, bool includeReserved)
+    /// <param name="only">Which components to look at, or all.</param>
+    private List<(string Name, MappingDataNode Node)> Delta(EntityUid uid, bool includeReserved, Func<ComponentRegistration, bool>? only = null)
     {
         var result = new List<(string, MappingDataNode)>();
         var prototype = _entMan.GetComponent<MetaDataComponent>(uid).EntityPrototype;
-        var cache = PrototypeNodes(prototype);
 
         foreach (var component in _entMan.GetComponents(uid))
         {
@@ -90,12 +122,12 @@ internal sealed partial class ComponentEditor
 
             var type = component.GetType();
             var registration = _factory.GetRegistration(type);
-            if (registration.Unsaved || (!includeReserved && Reserved.Contains(registration.Name)))
+            if (registration.Unsaved || (!includeReserved && Reserved.Contains(registration.Name)) || (only != null && !only(registration)))
                 continue;
 
             MappingDataNode? node;
             MappingDataNode? fromPrototype = null;
-            if (cache != null && cache.TryGetValue(registration.Name, out fromPrototype))
+            if (PrototypeNode(prototype, registration.Name, out fromPrototype))
             {
                 node = _serialization.WriteValueAs<MappingDataNode>(type, component, alwaysWrite: true, context: _context).Except(fromPrototype);
                 if (node == null)
@@ -116,22 +148,42 @@ internal sealed partial class ComponentEditor
         return result;
     }
 
-    private Dictionary<string, MappingDataNode>? PrototypeNodes(EntityPrototype? prototype)
+    /// <summary>
+    /// A component of the prototype as data, written the first time it is asked for. Only the
+    /// components asked for are written: the saved data the view is sent asks for a few of many.
+    /// </summary>
+    private bool PrototypeNode(EntityPrototype? prototype, string name, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out MappingDataNode? node)
     {
+        node = null;
         if (prototype == null)
-            return null;
+            return false;
 
-        if (_prototypeCache.TryGetValue(prototype.ID, out var cache))
-            return cache;
+        if (!_prototypeCache.TryGetValue(prototype.ID, out var cache))
+            _prototypeCache[prototype.ID] = cache = new Dictionary<string, MappingDataNode>();
+        if (cache.TryGetValue(name, out node))
+            return true;
 
-        _prototypeCache[prototype.ID] = cache = new Dictionary<string, MappingDataNode>(prototype.Components.Count);
-        _context.WritingReadingPrototypes = true;
-        foreach (var (name, entry) in prototype.Components)
-            cache[name] = _serialization.WriteValueAs<MappingDataNode>(entry.Component.GetType(), entry.Component, alwaysWrite: true, context: _context);
-        _context.WritingReadingPrototypes = false;
-        cache.TryAdd("MetaData", _defaultMetaData);
-        cache.TryAdd("Transform", _defaultTransform);
-        return cache;
+        if (prototype.Components.TryGetValue(name, out var entry))
+        {
+            _context.WritingReadingPrototypes = true;
+            node = _serialization.WriteValueAs<MappingDataNode>(entry.Component.GetType(), entry.Component, alwaysWrite: true, context: _context);
+            _context.WritingReadingPrototypes = false;
+        }
+        else
+        {
+            node = name switch
+            {
+                "MetaData" => _defaultMetaData,
+                "Transform" => _defaultTransform,
+                _ => null,
+            };
+        }
+
+        if (node == null)
+            return false;
+
+        cache[name] = node;
+        return true;
     }
 
     /// <summary>A component's complete data, or null if the entity does not have it. For undo.</summary>

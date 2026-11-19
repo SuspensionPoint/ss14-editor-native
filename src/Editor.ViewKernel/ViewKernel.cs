@@ -245,6 +245,9 @@ public sealed class ViewKernel
 
     public int ShownEntities(int document) => _world.EntityCount(document);
 
+    /// <summary>The view's copy of the documents, for the checks.</summary>
+    internal ViewWorld World => _world;
+
     /// <summary>The document as drawing data; see ViewWorld.BuildDrawList for the layout.</summary>
     public byte[]? BuildDrawList(int document, bool full) => _world.BuildDrawList(document, full);
 

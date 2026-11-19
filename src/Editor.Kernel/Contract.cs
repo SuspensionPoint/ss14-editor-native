@@ -27,7 +27,26 @@ public sealed record Scene(
     IReadOnlyList<SceneEntity> Entities,
     HistoryState History,
     /// <summary>The looks the game's server would send of the entities, where it says any.</summary>
-    IReadOnlyList<SceneVisuals> Visuals);
+    IReadOnlyList<SceneVisuals> Visuals)
+{
+    /// <summary>
+    /// The saved data of each shown entity that the game's server would send its clients
+    /// (SavedState.cs). It goes straight to the view in this process and is not sent as JSON.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<SceneSaved> Saved { get; init; } = [];
+}
+
+/// <summary>
+/// The data a map saves for one entity beyond its prototype's, of the components the game's
+/// server sends its clients. The client's own systems then dress the entity by it, as they do
+/// when the server's copy reaches them. Entity references in it are the document's uids. An
+/// empty list says the entity is as its prototype has it.
+/// </summary>
+public sealed record SceneSaved(int Uid, IReadOnlyList<SavedComponent> Components);
+
+/// <summary>One component's saved data, as the map file holds it.</summary>
+public sealed record SavedComponent(string Name, Robust.Shared.Serialization.Markdown.Mapping.MappingDataNode Data);
 
 public sealed record SceneGrid(
     int Uid,
@@ -105,19 +124,33 @@ public sealed record SceneVisuals(
     /// lives under the floor, its ducts and plumbing machines. The view gives its draw-list item
     /// a kind of its own. False only for one that was and is no more.
     /// </summary>
-    bool? PlumbingLayer)
+    bool? PlumbingLayer,
+    /// <summary>
+    /// Appearance values that only the game's server sets as a map loads, which a client cannot
+    /// work out from the saved data it is sent (VisualsDevices.cs). Null says nothing.
+    /// </summary>
+    IReadOnlyList<AppearanceValue>? Appearance = null)
 {
-    /// <summary>Equal when every field is, the plumbing values one by one.</summary>
+    /// <summary>Equal when every field is, the plumbing and appearance values one by one.</summary>
     public bool Equals(SceneVisuals? other) =>
         other is not null && Uid == other.Uid && CableMask == other.CableMask && PipeState == other.PipeState && PipeColor == other.PipeColor
         && PipeLayer == other.PipeLayer && PlumbingLayer == other.PlumbingLayer
-        && (Plumbing == null ? other.Plumbing == null : other.Plumbing != null && Plumbing.SequenceEqual(other.Plumbing));
+        && (Plumbing == null ? other.Plumbing == null : other.Plumbing != null && Plumbing.SequenceEqual(other.Plumbing))
+        && (Appearance == null ? other.Appearance == null : other.Appearance != null && Appearance.SequenceEqual(other.Appearance));
 
-    public override int GetHashCode() => HashCode.Combine(Uid, CableMask, PipeState, PipeColor, PipeLayer, Plumbing?.Count, PlumbingLayer);
+    public override int GetHashCode() => HashCode.Combine(Uid, CableMask, PipeState, PipeColor, PipeLayer, Plumbing?.Count, PlumbingLayer, Appearance?.Count);
 }
 
 /// <summary>One appearance value the game's server sets, by the name of its key. A yes or no is 1 or 0.</summary>
 public sealed record SceneAppearance(string Key, int Value);
+
+/// <summary>
+/// One entry of the game's appearance data, as text: the key by its enum type's full name and
+/// member, and the value by its kind ("bool", "int", "float", "double", "string", "enum",
+/// "color", "vector2"). An enum value names its type in <see cref="ValueType"/>. A colour is
+/// #RRGGBBAA, a vector "x,y", numbers in invariant form.
+/// </summary>
+public sealed record AppearanceValue(string KeyType, string Key, string Kind, string Value, string? ValueType = null);
 
 public sealed record TileChange(
     int Grid,
@@ -162,7 +195,16 @@ public sealed record SceneDelta(
     /// The looks that changed, of the entities the command touched and of those on the cells
     /// beside them. Each is whole. An entity in <see cref="Removed"/> is not named here.
     /// </summary>
-    IReadOnlyList<SceneVisuals> Visuals);
+    IReadOnlyList<SceneVisuals> Visuals)
+{
+    /// <summary>
+    /// The saved data that changed, of entities whose components this command changed and of
+    /// those the view did not have yet, each whole, as <see cref="Scene.Saved"/>. It goes
+    /// straight to the view and is not sent as JSON.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<SceneSaved> Saved { get; init; } = [];
+}
 
 /// <summary>One device link: a port of a source wired to a port of a sink.</summary>
 public sealed record SceneLink(int Source, string SourcePort, int Sink, string SinkPort);

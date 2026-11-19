@@ -58,6 +58,12 @@
 //       Check the looks the kernel works out as the game's server would: pipe colours, cable
 //       joins with a terminal and a cable laid, and what the view draws by them (VisualsCheck.cs).
 //
+//   saved <fork repo> [--cache <kernel pack .zip>] [map path inside Resources ...]
+//       Check that the view shows each entity as the map saves it: the saved data and the
+//       appearance values the kernel sends reach the view, valves, doors and filters are drawn
+//       as their saved data says, and a valve closed by its data is drawn closed
+//       (VisualsCheck.Saved.cs).
+//
 //   airsurvey <fork repo> [--cache <kernel pack .zip>] [map path inside Resources ...]
 //       Fix each map and tell whether its stored air comes out as the file had it: the same
 //       text, the same air in another order, or other air. Writes no file.
@@ -112,7 +118,7 @@ if (args.Length >= 1 && args[0] == "quick")
     args = ["all", .. quickArgs];
 }
 
-if (args.Length < 2 || args[0] is not ("bench" or "saves" or "keeps" or "moves" or "regions" or "copies" or "facts" or "containers" or "links" or "grids" or "airfix" or "visuals" or "airsurvey" or "all"))
+if (args.Length < 2 || args[0] is not ("bench" or "saves" or "keeps" or "moves" or "regions" or "copies" or "facts" or "containers" or "links" or "grids" or "airfix" or "visuals" or "saved" or "airsurvey" or "all"))
 {
     Console.Error.WriteLine("usage: Editor.Native bench <fork repo> [--cache <kernel pack>] [--sequential] [--json <file>] [map ...]");
     Console.Error.WriteLine("       Editor.Native saves <fork repo> [--cache <kernel pack>] [--rounds <n>] [map ...]");
@@ -126,6 +132,7 @@ if (args.Length < 2 || args[0] is not ("bench" or "saves" or "keeps" or "moves" 
     Console.Error.WriteLine("       Editor.Native grids <fork repo> [--cache <kernel pack>] [--out <folder>] [map ...]");
     Console.Error.WriteLine("       Editor.Native airfix <fork repo> [--cache <kernel pack>] [--out <folder>] [map ...]");
     Console.Error.WriteLine("       Editor.Native visuals <fork repo> [--cache <kernel pack>] [map ...]");
+    Console.Error.WriteLine("       Editor.Native saved <fork repo> [--cache <kernel pack>] [map ...]");
     Console.Error.WriteLine("       Editor.Native airsurvey <fork repo> [--cache <kernel pack>] [map ...]");
     Console.Error.WriteLine("       Editor.Native all <fork repo> [--cache <kernel pack>] [--out <folder>] [map ...]");
     Console.Error.WriteLine("       Editor.Native quick [fork repo] [--cache <kernel pack>] [--out <folder>] [map ...]");
@@ -177,6 +184,9 @@ if (args[0] == "airfix")
 if (args[0] == "visuals")
     return VisualsCheck.Run(args[1], cache, maps, Console.WriteLine);
 
+if (args[0] == "saved")
+    return VisualsCheck.RunSaved(args[1], cache, maps, Console.WriteLine);
+
 if (args[0] == "airsurvey")
     return AirFixCheck.Survey(EngineSession.Booted(args[1], cache), args[1], maps, Console.WriteLine);
 
@@ -217,6 +227,7 @@ if (args[0] == "all")
     Check("grids", () => GridCheck.Run(session, args[1], maps, Path.Combine(folder, "grids"), Console.WriteLine));
     Check("airfix", () => AirFixCheck.Run(session, args[1], maps, Path.Combine(folder, "airfix"), Console.WriteLine));
     Check("visuals", () => VisualsCheck.Run(session, args[1], maps, Console.WriteLine));
+    Check("saved", () => VisualsCheck.RunSaved(session, args[1], maps, Console.WriteLine));
 
     Console.WriteLine("\n==== all ====");
     foreach (var (name, ok, skipped) in results)

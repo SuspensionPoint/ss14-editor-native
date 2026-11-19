@@ -67,6 +67,7 @@ internal sealed partial class VisualsReader(IEntityManager entMan, SharedMapSyst
         }
 
         AddPlumbingMachines(mapUid, things);
+        AddDevices(mapUid, things);
 
         // What is on the Plumbing layer, should it have neither connectors nor pipe looks.
         var hidden = entMan.AllEntityQueryEnumerator<SubFloorHideComponent, NodeContainerComponent, TransformComponent>();
@@ -183,11 +184,12 @@ internal sealed partial class VisualsReader(IEntityManager entMan, SharedMapSyst
         var layer = PipeLayer(uid, before?.PipeLayer != null);
         var plumbing = PlumbingLooks(uid, xform);
         var plumbingLayer = OnPlumbingLayer(uid) ? true : before?.PlumbingLayer == true ? false : (bool?) null;
-        if (mask == null && state == null && color == null && layer == null && plumbing == null && plumbingLayer == null)
+        var appearance = DeviceLooks(uid);
+        if (mask == null && state == null && color == null && layer == null && plumbing == null && plumbingLayer == null && appearance == null)
             return null;
 
         var (grid, cell) = CellOf(xform) ?? (EntityUid.Invalid, Vector2i.Zero);
-        return new Sent(new SceneVisuals(uid.Id, (int?) mask, state, color, layer, plumbing, plumbingLayer), grid, cell);
+        return new Sent(new SceneVisuals(uid.Id, (int?) mask, state, color, layer, plumbing, plumbingLayer, appearance), grid, cell);
     }
 
     /// <summary>

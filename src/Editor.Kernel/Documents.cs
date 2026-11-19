@@ -44,6 +44,7 @@ public sealed class DocumentManager
     private readonly SharedContainerSystem _containers;
     private readonly EditorDeviceLinkSystem _links;
     private readonly VisualsReader _visuals;
+    private readonly SavedStateReader _saved;
     private readonly CollectingLogHandler _log;
 #if ENGINE_MAP_SYSTEM_GRIDS
     private Entity<MapGridComponent> CreateGrid(MapId map) => _map.CreateGridEntity(map);
@@ -119,6 +120,7 @@ public sealed class DocumentManager
         _containers = entMan.System<SharedContainerSystem>();
         _links = entMan.System<EditorDeviceLinkSystem>();
         _visuals = new VisualsReader(entMan, _map, tiles);
+        _saved = new SavedStateReader(entMan, components);
 #if !ENGINE_MAP_SYSTEM_GRIDS
         _mapManager = entMan.EntitySysManager.DependencyCollection.Resolve<IMapManager>();
 #endif
@@ -159,6 +161,8 @@ public sealed class DocumentManager
         public readonly HashSet<EntityUid> Parked = new();
         /// <summary>The looks last sent of each entity (Visuals.cs).</summary>
         public readonly Dictionary<EntityUid, VisualsReader.Sent> Visuals = new();
+        /// <summary>The saved data last sent of each entity (SavedState.cs).</summary>
+        public readonly SavedStateReader.Sent Saved = new();
     }
 
     /// <summary>One undoable user action.</summary>
@@ -202,19 +206,35 @@ public sealed class DocumentManager
 
         var (category, version, engineVersion) = PeekHeader(yaml);
         EntityUid mapUid;
+        Dictionary<int, HashSet<string>>? listed = null;
 
         if (category != FileCategory.Grid)
         {
-            using var reader = new StringReader(yaml);
             var options = MapLoadOptions.Default with { DeserializationOptions = deserialization };
-            if (!_loader.TryLoadGeneric(reader, source, out var result, options))
-                throw new KernelException("The engine's map loader rejected the file.", _log.Drain());
+            LoadResult? result;
+#if ENGINE_MAP_LOADER_TEXT
+            // Read with the engine's parser as its loader does (MapLoaderSystem.TryReadFile), to
+            // know which components the file saves of each entity before they are loaded.
+            var documents = DataNodeParser.ParseYamlStream(new StringReader(yaml)).ToArray();
+            if (documents.Length == 1 && documents[0].Root is MappingDataNode data)
+            {
+                listed = SavedStateReader.Listed(data);
+                if (!_loader.TryLoadGeneric(data, source, out result, options))
+                    throw new KernelException("The engine's map loader rejected the file.", _log.Drain());
+            }
+            else
+#endif
+            {
+                using var reader = new StringReader(yaml);
+                if (!_loader.TryLoadGeneric(reader, source, out result, options))
+                    throw new KernelException("The engine's map loader rejected the file.", _log.Drain());
+            }
 
             category = result.Category;
             version = result.Version;
             engineVersion = result.EngineVersion;
 
-            if (category == FileCategory.Map && result.Maps.Count == 1)
+            if (category == FileCategory.Map && result!.Maps.Count == 1)
             {
                 mapUid = result.Maps.First().Owner;
             }
@@ -222,12 +242,13 @@ public sealed class DocumentManager
             {
                 // Old grid files do not say what they are; the loader only works it out while
                 // loading. Drop this attempt and load it again the way the game loads grids.
-                _loader.Delete(result);
+                _loader.Delete(result!);
+                listed = null;
                 if (category != FileCategory.Grid)
                 {
                     throw new KernelException(
                         $"Only map and grid files can be edited. The engine read this file as: {category} " +
-                        $"({result.Maps.Count} maps, {result.Grids.Count} grids).", _log.Drain());
+                        $"({result!.Maps.Count} maps, {result.Grids.Count} grids).", _log.Drain());
                 }
 
                 mapUid = default;
@@ -261,6 +282,7 @@ public sealed class DocumentManager
             EngineVersion = engineVersion,
             LoadMilliseconds = sw.ElapsedMilliseconds,
         };
+        document.Saved.Listed = listed;
         return Register(document);
     }
 
@@ -360,7 +382,10 @@ public sealed class DocumentManager
             entities.Count + grids.Count + (ground == null ? 1 : 0),
             document.LoadMilliseconds,
             _log.Drain());
-        return new Scene(info, grids, entities, History(document), _visuals.All(document.Map, document.Visuals));
+        return new Scene(info, grids, entities, History(document), _visuals.All(document.Map, document.Visuals))
+        {
+            Saved = _saved.All(entities, document.Saved),
+        };
     }
 
     private void Collect(EntityUid parent, List<SceneGrid> grids, List<SceneEntity> entities)
@@ -2352,6 +2377,7 @@ public sealed class DocumentManager
         }
 
         var visuals = _visuals.Changed(document.Map, document.Visuals, _touched.Concat(detailed ?? []), cells, removed);
+        var saved = _saved.Changed(document.Map, document.Saved, detailed ?? [], _touched, removed);
 
         _touched.Clear();
         _destroyed.Clear();
@@ -2360,7 +2386,10 @@ public sealed class DocumentManager
         _linksEntered.Clear();
         var air = _airChanged.Where(_entMan.EntityExists).Select(uid => uid.Id).Order().ToArray();
         _airChanged.Clear();
-        return new SceneDelta(document.Id, tiles, entities, removed.Distinct().ToArray(), grids, History(document), created, decals ?? [], createdDecals ?? [], details, linked, air, _log.Drain(), visuals);
+        return new SceneDelta(document.Id, tiles, entities, removed.Distinct().ToArray(), grids, History(document), created, decals ?? [], createdDecals ?? [], details, linked, air, _log.Drain(), visuals)
+        {
+            Saved = saved,
+        };
     }
 
     private void TouchDescendants(EntityUid uid)

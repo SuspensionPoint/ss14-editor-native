@@ -72,6 +72,15 @@ public sealed partial class ViewWorld
 
         /// <summary>The looks the kernel sent last, by document uid, for a view entity made again.</summary>
         public readonly Dictionary<int, SceneVisuals> Visuals = new();
+
+        /// <summary>The saved data the kernel sent last, by document uid, that the entity is made with (ViewWorld.Saved.cs).</summary>
+        public readonly Dictionary<int, IReadOnlyList<SavedComponent>> Saved = new();
+
+        /// <summary>Where each shown entity was last placed, to make it again when its saved data changes.</summary>
+        public readonly Dictionary<int, SceneEntity> Placed = new();
+
+        /// <summary>Shown entities whose saved data named one the view had not made yet.</summary>
+        public readonly HashSet<int> Unresolved = new();
     }
 
     // ---- layer visibility ----
@@ -150,6 +159,9 @@ public sealed partial class ViewWorld
         foreach (var grid in scene.Grids)
             UpsertGrid(doc, grid);
 
+        foreach (var saved in scene.Saved)
+            doc.Saved[saved.Uid] = saved.Components;
+
         var failed = 0;
         foreach (var entity in scene.Entities)
         {
@@ -159,6 +171,8 @@ public sealed partial class ViewWorld
 
         if (failed > 0)
             _log.Warning($"{failed} of {scene.Entities.Count} entities could not be shown.");
+
+        ResolveSaved(doc);
 
         ApplyVisuals(doc, scene.Visuals);
     }
@@ -215,10 +229,23 @@ public sealed partial class ViewWorld
                 _hiddenByLayer.Remove(uid);
                 _entMan.DeleteEntity(uid);
             }
+
+            doc.Saved.Remove(removed);
+            doc.Placed.Remove(removed);
         }
 
+        // An entity whose saved data changed is made again with it, where the delta puts it
+        // or where it stood.
+        var again = TakeSaved(doc, delta.Saved);
         foreach (var entity in delta.Entities)
             Upsert(doc, entity);
+        foreach (var uid in again)
+        {
+            if (!doc.Entities.ContainsKey(uid) && doc.Placed.TryGetValue(uid, out var placed))
+                Upsert(doc, placed);
+        }
+
+        ResolveSaved(doc);
 
         // An older kernel's delta, read from text, has none.
         ApplyVisuals(doc, delta.Visuals ?? []);
@@ -272,6 +299,8 @@ public sealed partial class ViewWorld
 
         if (record.PipeColor is { } color)
             system.SetData(uid, PipeColorVisuals.Color, Color.FromHex(color), appearance);
+        if (record.Appearance is { } values)
+            SetAppearance(uid, appearance, values);
     }
 
     public void Close(int document)
@@ -409,6 +438,7 @@ public sealed partial class ViewWorld
                 doc.Gone.Add(scene.Uid);
                 _entMan.DeleteEntity(uid);
                 doc.Entities.Remove(scene.Uid);
+                doc.Placed.Remove(scene.Uid);
             }
 
             return true;
@@ -424,7 +454,7 @@ public sealed partial class ViewWorld
                 if (!_protos.HasIndex<EntityPrototype>(scene.Prototype))
                     return false;
 
-                uid = _entMan.SpawnAttachedTo(scene.Prototype, coordinates, rotation: rotation);
+                uid = Spawn(doc, scene, coordinates, rotation);
                 doc.Entities[scene.Uid] = uid;
                 doc.DocUids[uid] = scene.Uid;
                 doc.Gone.Remove(scene.Uid);
@@ -453,6 +483,7 @@ public sealed partial class ViewWorld
                 SetVisuals(uid, visuals);
 
             doc.Dirty.Add(scene.Uid);
+            doc.Placed[scene.Uid] = scene;
             MarkAround(doc, uid);
 
             return true;
