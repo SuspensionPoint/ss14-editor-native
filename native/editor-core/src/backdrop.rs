@@ -15,11 +15,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::colour::{byte_to_linear, linear_to_byte, LinearPicture};
 use crate::engine::Engine;
-use crate::textures::decode_premultiplied;
+use crate::textures::decode_straight;
 
 /// A picture and its smaller copies, each half the size of the one before, down to one pixel:
-/// 8-bit RGBA with the alpha multiplied into the colour.
+/// 8-bit sRGB RGBA with straight alpha, as the file has it. The GPU samples them as sRGB, as the
+/// game does.
 pub struct Picture {
     pub width: u32,
     pub height: u32,
@@ -38,13 +40,26 @@ impl Picture {
                 for x in 0..nw {
                     let (x0, y0) = ((x * 2).min(w - 1), (y * 2).min(h - 1));
                     let (x1, y1) = ((x * 2 + 1).min(w - 1), (y * 2 + 1).min(h - 1));
-                    for channel in 0..4 {
-                        let sum = from[(y0 * w + x0) * 4 + channel] as u32
-                            + from[(y0 * w + x1) * 4 + channel] as u32
-                            + from[(y1 * w + x0) * 4 + channel] as u32
-                            + from[(y1 * w + x1) * 4 + channel] as u32;
-                        smaller.push(((sum + 2) / 4) as u8);
+                    // The mean of four pixels in linear light, each weighted by its alpha, so
+                    // that clear pixels lend no colour and a smaller copy is as bright as the
+                    // picture.
+                    let mut sum = [0.0f32; 4];
+                    for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+                        let pixel = &from[(py * w + px) * 4..][..4];
+                        let alpha = pixel[3] as f32 / 255.0;
+                        for channel in 0..3 {
+                            sum[channel] += byte_to_linear(pixel[channel]) * alpha;
+                        }
+                        sum[3] += alpha;
                     }
+                    if sum[3] <= 0.0 {
+                        smaller.extend_from_slice(&[0, 0, 0, 0]);
+                        continue;
+                    }
+                    for channel in 0..3 {
+                        smaller.push(linear_to_byte(sum[channel] / sum[3]));
+                    }
+                    smaller.push((sum[3] / 4.0 * 255.0).round() as u8);
                 }
             }
             levels.push(smaller);
@@ -128,7 +143,7 @@ impl Backdrop {
     }
 }
 
-/// A small picture of a backdrop: 8-bit RGBA, the alpha multiplied into the colour.
+/// A small picture of a backdrop: 8-bit sRGB RGBA, the alpha multiplied into the colour.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Thumb {
     pub width: u32,
@@ -144,10 +159,10 @@ const THUMB_TILES: f32 = 40.0;
 
 /// A backdrop's layers as they are drawn around a camera at the world's origin, on black,
 /// scaled down to `size`. Each pixel takes the nearest pixel of the smaller copy of a layer
-/// that is closest to its size.
+/// that is closest to its size. The layers are blended in linear light, as on the map.
 pub fn thumbnail(backdrop: &Backdrop, size: (u32, u32)) -> Thumb {
     let (width, height) = (size.0.max(1), size.1.max(1));
-    let mut pixels = [0, 0, 0, 255].repeat((width * height) as usize);
+    let mut painted = LinearPicture::filled(width, height, [0, 0, 0, 255]);
     // Tiles to a pixel of the picture made.
     let tiles = THUMB_TILES / width as f32;
     for layer in &backdrop.layers {
@@ -175,15 +190,11 @@ pub fn thumbnail(backdrop: &Backdrop, size: (u32, u32)) -> Thumb {
                 let sx = ((u * level_width as f32) as usize).min(level_width as usize - 1);
                 let sy = (((1.0 - v) * level_height as f32) as usize).min(level_height as usize - 1);
                 let from = &source[(sy * level_width as usize + sx) * 4..][..4];
-                let to = &mut pixels[((row * width + column) * 4) as usize..][..4];
-                let keep = 255 - from[3] as u32;
-                for channel in 0..4 {
-                    to[channel] = (from[channel] as u32 + (to[channel] as u32 * keep + 127) / 255).min(255) as u8;
-                }
+                painted.blend((row * width + column) as usize, from, [1.0; 4]);
             }
         }
     }
-    Thumb { width, height, pixels }
+    Thumb { width, height, pixels: painted.to_premultiplied_bytes() }
 }
 
 /// Where painted layers are kept between runs.
@@ -235,7 +246,7 @@ fn read(described: Described) -> Result<Backdrop, String> {
     let mut skipped = described.skipped;
     let mut layers = Vec::with_capacity(described.layers.len());
     for layer in described.layers {
-        match decode_premultiplied(Path::new(&layer.file)) {
+        match decode_straight(Path::new(&layer.file)) {
             Some((width, height, pixels)) if width > 0 && height > 0 => layers.push(Layer { picture: Picture::new(width, height, pixels), placing: layer.placing }),
             _ => skipped += 1,
         }

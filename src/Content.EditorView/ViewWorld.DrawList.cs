@@ -34,6 +34,8 @@ public sealed partial class ViewWorld
     private const int DecalDepth = -1_000_000_000;
     private const int ChunkSize = 16;
     private const int TilePixels = 32;
+    /// <summary>The engine's image for a tile that has none of its own.</summary>
+    private const string NoTile = "/Textures/noTile.png";
 
     private readonly TextureRegistry _textures = new();
     private readonly IResourceCache _resources = IoCManager.Resolve<IResourceCache>();
@@ -143,7 +145,7 @@ public sealed partial class ViewWorld
                 continue;
             }
 
-            _textures.RegisterLayers(sprite);
+            _textures.RegisterLayers(sprite, _resources);
             var (position, rotation) = _xform.GetWorldPositionRotation(uid);
             try
             {
@@ -269,7 +271,7 @@ public sealed partial class ViewWorld
                     {
                         if (_entMan.TryGetComponent(uid, out SpriteComponent? sprite))
                         {
-                            _textures.RegisterLayers(sprite);
+                            _textures.RegisterLayers(sprite, _resources);
                             var kind = KindOf(uid);
                             for (; recorded < turns; recorded++)
                             {
@@ -339,7 +341,7 @@ public sealed partial class ViewWorld
     private void RecordTiles(EntityUid gridUid, MapGridComponent grid, Vector2i chunk, HashSet<Vector2i> existing, Matrix3x2 matrix)
     {
         var origin = chunk * ChunkSize;
-        var edges = new List<(Vector2i Cell, string Path)>();
+        var edges = new List<(Vector2i Cell, string Path, int Turns)>();
 
         // One cell beyond the chunk on every side, for edges that fall on cells no chunk holds.
         for (var x = -1; x <= ChunkSize; x++)
@@ -352,14 +354,20 @@ public sealed partial class ViewWorld
 
             if (!_map.TryGetTile(grid, cell, out var tile))
                 tile = Tile.Empty;
-            if (!_tileDefs.TryGetDefinition(tile.TypeId, out var definition))
-                continue;
+            _tileDefs.TryGetDefinition(tile.TypeId, out var definition);
 
-            if (owner == chunk && !tile.IsEmpty && definition.Sprite is { } sprite)
+            if (owner == chunk && !tile.IsEmpty)
             {
-                var id = _textures.File(sprite.ToString(), Math.Min(tile.Variant, Math.Max(definition.Variants - 1, 0)), TilePixels, TilePixels);
-                AddTile(id, cell, definition.AllowRotationMirror ? tile.RotationMirroring : 0, matrix);
+                // The game draws its missing tile image for a tile with no image, or a variant
+                // its image does not have (Clyde.GridRendering.cs, ClydeTileDefinitionManager).
+                var id = definition?.Sprite is { } sprite && tile.Variant < definition.Variants
+                    ? _textures.File(sprite.ToString(), tile.Variant, TilePixels, TilePixels)
+                    : _textures.File(NoTile, 0, TilePixels, TilePixels);
+                AddTile(id, cell, definition is { AllowRotationMirror: true } ? tile.RotationMirroring : 0, matrix);
             }
+
+            if (definition == null)
+                continue;
 
             for (var nx = -1; nx <= 1; nx++)
             for (var ny = -1; ny <= 1; ny++)
@@ -381,14 +389,29 @@ public sealed partial class ViewWorld
 
                 var direction = new Vector2i(nx, ny).AsDirection().GetOpposite();
                 if (neighbourDefinition.EdgeSprites.TryGetValue(direction, out var edge))
-                    edges.Add((cell, edge.ToString()));
+                    edges.Add((cell, edge.ToString(), EdgeTurns(direction)));
             }
         }
 
         // Edges go over every tile of the chunk, as the renderer draws them in a second pass.
-        foreach (var (cell, path) in edges)
-            AddTile(_textures.File(path, 0, TilePixels, TilePixels), cell, 0, matrix);
+        foreach (var (cell, path, turns) in edges)
+            AddTile(_textures.File(path, 0, TilePixels, TilePixels), cell, turns, matrix);
     }
+
+    /// <summary>
+    /// The quarter turns an edge image takes for its direction. The game draws each edge image
+    /// for the south side, or the south-east corner, and turns it to face the others when it
+    /// loads the tile atlas (ClydeTileDefinitionManager): a quarter for east and north-east,
+    /// a half for north and north-west, three quarters for west and south-west. One turn in
+    /// <see cref="AddTile"/> takes the image's lower side to the cell's right, as east needs.
+    /// </summary>
+    private static int EdgeTurns(Direction direction) => direction switch
+    {
+        Direction.East or Direction.NorthEast => 1,
+        Direction.North or Direction.NorthWest => 2,
+        Direction.West or Direction.SouthWest => 3,
+        _ => 0,
+    };
 
     private void AddTile(int textureId, Vector2i cell, int rotationMirroring, Matrix3x2 matrix)
     {

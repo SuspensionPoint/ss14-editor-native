@@ -1,16 +1,23 @@
 //! Draws a document's draw list on the GPU, with every rectangle of the map in one draw call.
 //!
-//! It makes the same picture as the web editor's WebGL renderer, the same way. There is one
-//! instance per rectangle in the engine's drawing order, textures sit in an array atlas with
-//! premultiplied alpha, and sampling is nearest. Panning and zooming change one small uniform and
-//! nothing else. Switching a layer off is just as cheap, because every rectangle carries its layer
-//! and the GPU skips the hidden ones.
+//! There is one instance per rectangle in the engine's drawing order, textures sit in an array
+//! atlas, and sampling is nearest. Panning and zooming change one small uniform and nothing else.
+//! Switching a layer off is just as cheap, because every rectangle carries its layer and the GPU
+//! skips the hidden ones.
+//!
+//! Colours are handled as the game's Clyde handles them. The atlas and the backdrop are sRGB
+//! textures (TextureLoadParameters.Default has Srgb set, Clyde.Textures.cs uploads them as
+//! Srgb8Alpha8), the map is drawn through an sRGB view of the target (Clyde renders into an
+//! Rgba8Srgb target with GL_FRAMEBUFFER_SRGB on), and a sprite's tint is turned to linear in the
+//! vertex shader. So blending happens in linear light, as in the game. The editor's own drawing
+//! (the air overlay, what is about to be placed, grid lines, the selection border) goes through
+//! the target's plain view instead, so its colours blend as the sRGB values they were chosen as.
 //!
 //! On request it also draws two things of its own around the map ([`MapRenderer::set_surround`]):
 //! the game's backdrop behind it, and the grid lines between cells over it.
 //!
-//! The renderer doesn't own a window or a frame. It draws into whatever render pass it is handed,
-//! so the same code works in a bare window and inside an interface toolkit's canvas.
+//! The renderer doesn't own a window or a frame. It draws into a texture it is handed, so the
+//! same code works in a bare window and inside an interface toolkit's canvas.
 
 use std::collections::HashMap;
 
@@ -98,7 +105,8 @@ struct ViewUniform {
     atlas_size: f32,
     /// One bit per layer; a set bit hides it.
     hidden: u32,
-    _padding: [f32; 2],
+    /// The target's size in device pixels, for the map's corners to be put on its pixels.
+    pixels: [f32; 2],
 }
 
 #[repr(C)]
@@ -118,11 +126,14 @@ struct LayerUniform {
     half: [f32; 2],
     origin: [f32; 2],
     size: [f32; 2],
-    /// Premultiplied.
+    /// Premultiplied, in linear light.
     colour: [f32; 4],
     /// 0 repeated, 1 shown once, 2 a flat colour.
     mode: u32,
-    _padding: [u32; 3],
+    /// 1 to take the picture's own pixels, nearest, as the game does. 0 to let the GPU take
+    /// the smaller copies.
+    sharp: u32,
+    _padding: [u32; 2],
 }
 
 #[repr(C)]
@@ -172,7 +183,8 @@ struct Around {
     backdrop_pipeline: wgpu::RenderPipeline,
     backdrop_layout: wgpu::BindGroupLayout,
     backdrop_sampler: wgpu::Sampler,
-    /// A flat black under the layers, as the game clears its view to.
+    /// A flat black under the layers, as the game clears its view to. It is drawn whenever the
+    /// backdrop is on, layers or not.
     floor: wgpu::BindGroup,
     layers: Vec<ShownLayer>,
     backdrop_id: u64,
@@ -222,7 +234,8 @@ impl Atlas {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            // sRGB with straight alpha, as the baked file holds them (textures.rs).
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -278,7 +291,10 @@ struct Overlay {
 }
 
 pub struct MapRenderer {
+    /// The map, through the target's sRGB view.
     pipeline: wgpu::RenderPipeline,
+    /// The editor's own rectangles, through the target's plain view.
+    overlay_pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
@@ -303,13 +319,17 @@ pub struct MapRenderer {
     air: Overlay,
     air_version: Option<u64>,
     air_stale: bool,
-    target: wgpu::TextureFormat,
+    /// The sRGB form of the target's format, which the map is drawn through.
+    srgb: wgpu::TextureFormat,
     selection: Selection,
     around: Around,
 }
 
 impl MapRenderer {
+    /// A renderer for targets of a plain 8-bit format, such as `Rgba8Unorm`. Each target must
+    /// also allow views in the sRGB form of it ([`Self::view_formats`]).
     pub fn new(device: &wgpu::Device, target: wgpu::TextureFormat) -> MapRenderer {
+        let srgb = target.add_srgb_suffix();
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("map"),
             source: wgpu::ShaderSource::Wgsl(include_str!("map.wgsl").into()),
@@ -354,35 +374,39 @@ impl MapRenderer {
             0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32x2,
             4 => Float32x4, 5 => Float32, 6 => Float32x4
         ];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("map"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vertex"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: (FLOATS_PER_QUAD * 4) as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &attributes,
-                })],
-            },
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleStrip, ..Default::default() },
-            depth_stencil: None,
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fragment"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let make = |vertex: &str, fragment: &str, format: wgpu::TextureFormat| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("map"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(vertex),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: (FLOATS_PER_QUAD * 4) as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &attributes,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleStrip, ..Default::default() },
+                depth_stencil: None,
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(fragment),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = make("vertex", "fragment", srgb);
+        let overlay_pipeline = make("vertex_overlay", "fragment_overlay", target);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("map"),
@@ -399,12 +423,13 @@ impl MapRenderer {
         let instance_capacity = 4096 * (FLOATS_PER_QUAD * 4) as u64;
         let instances = Self::instance_buffer(device, instance_capacity);
         let selection = Self::selection(device, target);
-        let around = Self::around(device, target);
+        let around = Self::around(device, srgb, target);
         let atlas = Atlas::new(device, 4);
         let bind_group = Self::bind(device, &bind_group_layout, &uniform, &atlas, &sampler);
 
         MapRenderer {
             pipeline,
+            overlay_pipeline,
             bind_group_layout,
             bind_group,
             sampler,
@@ -423,7 +448,7 @@ impl MapRenderer {
             air: Overlay::default(),
             air_version: None,
             air_stale: false,
-            target,
+            srgb,
             selection,
             around,
         }
@@ -460,7 +485,14 @@ impl MapRenderer {
         })
     }
 
-    fn around(device: &wgpu::Device, target: wgpu::TextureFormat) -> Around {
+    /// The formats a target's texture must allow views in, besides its own.
+    pub fn view_formats(target: wgpu::TextureFormat) -> [wgpu::TextureFormat; 1] {
+        [target.add_srgb_suffix()]
+    }
+
+    /// The backdrop is the game's and is drawn through the sRGB view. The grid lines are the
+    /// editor's and are drawn through the plain one.
+    fn around(device: &wgpu::Device, srgb: wgpu::TextureFormat, plain: wgpu::TextureFormat) -> Around {
         let uniform_entry = wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -489,9 +521,13 @@ impl MapRenderer {
                 },
             ],
         });
-        let backdrop_pipeline = Self::covering(device, target, "backdrop", include_str!("backdrop.wgsl"), &backdrop_layout);
-        // The game's own pixels when zoomed in; smoothed, from the smaller copies, when the
-        // view takes in more of a picture than it has pixels for.
+        let backdrop_pipeline = Self::covering(device, srgb, "backdrop", include_str!("backdrop.wgsl"), &backdrop_layout);
+        // The game samples its textures nearest, with no smaller copies (TextureSampleParameters
+        // .Default has no filter, Clyde.Textures.cs sets GL_NEAREST). While the view is within
+        // the game's zoom the shader asks for the picture's own pixels (`sharp`), which the GPU
+        // samples with the magnifying filter, nearest, however small they are drawn. Zoomed out
+        // further than the game goes, it takes the smaller copies, smoothed, so that a picture
+        // shrunk far does not shimmer.
         let backdrop_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("backdrop"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -508,7 +544,7 @@ impl MapRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
@@ -523,7 +559,8 @@ impl MapRenderer {
                     size: [1.0; 2],
                     colour: [0.0, 0.0, 0.0, 1.0],
                     mode: 2,
-                    _padding: [0; 3],
+                    sharp: 1,
+                    _padding: [0; 2],
                 }),
                 usage: wgpu::BufferUsages::UNIFORM,
             },
@@ -539,7 +576,7 @@ impl MapRenderer {
         });
 
         let grid_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("grid lines"), entries: &[uniform_entry] });
-        let grid_pipeline = Self::covering(device, target, "grid lines", include_str!("grid.wgsl"), &grid_layout);
+        let grid_pipeline = Self::covering(device, plain, "grid lines", include_str!("grid.wgsl"), &grid_layout);
         let grid_uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("grid lines"),
             size: std::mem::size_of::<GridUniform>() as u64,
@@ -593,7 +630,7 @@ impl MapRenderer {
                 mip_level_count: (picture.levels.len() - first) as u32,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
@@ -637,7 +674,10 @@ impl MapRenderer {
         let centre = [camera.x, camera.y];
         let half = [width.max(1) as f32 / 2.0 / pixels, height.max(1) as f32 / 2.0 / pixels];
 
-        self.around.backdrop_shown = surround.backdrop && !self.around.layers.is_empty();
+        // The game clears its view to black before anything is drawn (Clyde.Viewport.cs), so
+        // with the backdrop on there is black behind the map even when the map has no layers,
+        // or none of them could be read.
+        self.around.backdrop_shown = surround.backdrop;
         if self.around.backdrop_shown {
             for layer in &self.around.layers {
                 let (origin, size) = layer.placing.place(layer.pixels, (camera.x, camera.y), surround.seconds);
@@ -657,7 +697,9 @@ impl MapRenderer {
                     size: size.into(),
                     colour: [1.0; 4],
                     mode: if layer.placing.tiled { 0 } else { 1 },
-                    _padding: [0; 3],
+                    // As above, 100% is as far out as the game shows a map.
+                    sharp: (camera.zoom >= 1.0) as u32,
+                    _padding: [0; 2],
                 };
                 queue.write_buffer(&layer.uniform, 0, bytemuck::bytes_of(&uniform));
             }
@@ -684,6 +726,8 @@ impl MapRenderer {
         }
     }
 
+    /// The border is the editor's own and is drawn through the target's plain view. Its mask is
+    /// drawn with the map's pipeline, so it is in the sRGB form.
     fn selection(device: &wgpu::Device, target: wgpu::TextureFormat) -> Selection {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("selection border"),
@@ -820,7 +864,7 @@ impl MapRenderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: self.target,
+                format: self.srgb,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -1102,48 +1146,82 @@ impl MapRenderer {
         Some(placed)
     }
 
-    /// Draws the prepared document as the camera sees it, into a target `width` by `height`
-    /// device pixels, leaving out the hidden layers (one bit per [`group`]).
-    pub fn render(&self, queue: &wgpu::Queue, pass: &mut wgpu::RenderPass<'_>, camera: Camera, width: u32, height: u32, hidden: u32) {
-        self.set_view(queue, camera, width, height, hidden);
-        self.draw(pass);
-    }
-
-    /// The first half of [`Self::render`], for hosts that set things up and draw at different
-    /// moments (an interface toolkit's paint callback): where the camera is, and which layers
-    /// are hidden (one bit per [`group`]).
+    /// Where the camera is for the next [`Self::draw`], and which layers are hidden (one bit
+    /// per [`group`]).
     pub fn set_view(&self, queue: &wgpu::Queue, camera: Camera, width: u32, height: u32, hidden: u32) {
         let uniform = ViewUniform {
             scale: [32.0 * camera.zoom * 2.0 / width.max(1) as f32, 32.0 * camera.zoom * 2.0 / height.max(1) as f32],
             centre: [camera.x, camera.y],
             atlas_size: LAYER_SIZE as f32,
             hidden,
-            _padding: [0.0; 2],
+            pixels: [width.max(1) as f32, height.max(1) as f32],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
     }
 
-    /// The second half: the draw calls, into a pass whose viewport is the map's area.
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.around.backdrop_shown {
-            pass.set_pipeline(&self.around.backdrop_pipeline);
-            pass.set_bind_group(0, &self.around.floor, &[]);
-            pass.draw(0..3, 0..1);
-            for layer in &self.around.layers {
-                pass.set_bind_group(0, &layer.bind_group, &[]);
+    /// The draw calls, into `target`: a texture as large as the map's area, of the format given
+    /// to [`Self::new`], that allows the views in [`Self::view_formats`]. It is first cleared to
+    /// `clear`, a colour in sRGB.
+    pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::Texture, clear: wgpu::Color) {
+        let plain = target.create_view(&Default::default());
+        let srgb = target.create_view(&wgpu::TextureViewDescriptor { format: Some(self.srgb), ..Default::default() });
+        // The clear goes through the plain view, so that its colour lands as given.
+        drop(Self::pass(encoder, &plain, wgpu::LoadOp::Clear(clear)));
+
+        // The backdrop and the map go through the sRGB view. The air overlay and what stands in
+        // for tiles not yet answered are the editor's, drawn through the plain view over the
+        // tiles and under all else.
+        let tiles_end = self.tiles_end.min(self.instance_count);
+        let air = self.air.buffer.as_ref().filter(|_| self.air.count > 0).map(|buffer| (buffer, self.air.count));
+        let under = self.under.buffer.as_ref().filter(|_| self.under.count > 0).map(|buffer| (buffer, self.under.count));
+        let between = air.is_some() || under.is_some();
+        {
+            let mut pass = Self::pass(encoder, &srgb, wgpu::LoadOp::Load);
+            if self.around.backdrop_shown {
+                pass.set_pipeline(&self.around.backdrop_pipeline);
+                pass.set_bind_group(0, &self.around.floor, &[]);
                 pass.draw(0..3, 0..1);
+                for layer in &self.around.layers {
+                    pass.set_bind_group(0, &layer.bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                }
+            }
+            let end = if between { tiles_end } else { self.instance_count };
+            if end > 0 {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.bind_group, &[]);
+                pass.set_vertex_buffer(0, self.instances.slice(..));
+                pass.draw(0..4, 0..end);
             }
         }
-        if self.instance_count > 0 || self.under.count > 0 || self.air.count > 0 {
-            self.draw_map(pass);
+        if between {
+            {
+                let mut pass = Self::pass(encoder, &plain, wgpu::LoadOp::Load);
+                pass.set_pipeline(&self.overlay_pipeline);
+                pass.set_bind_group(0, &self.bind_group, &[]);
+                for (buffer, count) in [air, under].into_iter().flatten() {
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..4, 0..count);
+                }
+            }
+            if self.instance_count > tiles_end {
+                let mut pass = Self::pass(encoder, &srgb, wgpu::LoadOp::Load);
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.bind_group, &[]);
+                pass.set_vertex_buffer(0, self.instances.slice(..));
+                pass.draw(0..4, tiles_end..self.instance_count);
+            }
         }
+
+        // The editor's own drawing over the map, through the plain view.
+        let mut pass = Self::pass(encoder, &plain, wgpu::LoadOp::Load);
         if self.around.grid_shown {
             pass.set_pipeline(&self.around.grid_pipeline);
             pass.set_bind_group(0, &self.around.grid_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
         if let Some(over) = self.over.buffer.as_ref().filter(|_| self.over.count > 0) {
-            pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(&self.overlay_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, over.slice(..));
             pass.draw(0..4, 0..self.over.count);
@@ -1155,33 +1233,20 @@ impl MapRenderer {
         }
     }
 
-    /// The map, with the air overlay and what stands in for its tiles drawn over the tiles and
-    /// under all else; what is drawn over it comes after the grid lines, in [`Self::draw`].
-    fn draw_map(&self, pass: &mut wgpu::RenderPass<'_>) {
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
-        let tiles_end = self.tiles_end.min(self.instance_count);
-        let air = self.air.buffer.as_ref().filter(|_| self.air.count > 0).map(|buffer| (buffer, self.air.count));
-        let under = self.under.buffer.as_ref().filter(|_| self.under.count > 0).map(|buffer| (buffer, self.under.count));
-        if air.is_none() && under.is_none() {
-            if self.instance_count > 0 {
-                pass.set_vertex_buffer(0, self.instances.slice(..));
-                pass.draw(0..4, 0..self.instance_count);
-            }
-            return;
-        }
-        if tiles_end > 0 {
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            pass.draw(0..4, 0..tiles_end);
-        }
-        for (buffer, count) in [air, under].into_iter().flatten() {
-            pass.set_vertex_buffer(0, buffer.slice(..));
-            pass.draw(0..4, 0..count);
-        }
-        if self.instance_count > tiles_end {
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            pass.draw(0..4, tiles_end..self.instance_count);
-        }
+    fn pass<'a>(encoder: &'a mut wgpu::CommandEncoder, view: &wgpu::TextureView, load: wgpu::LoadOp<wgpu::Color>) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("map"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        })
     }
 
     pub fn instance_count(&self) -> u32 {

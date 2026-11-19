@@ -49,9 +49,10 @@ fn a_picture_of_a_backdrop_has_its_tiled_layers_everywhere_and_the_others_at_hom
 
 #[test]
 fn a_half_clear_layer_lets_what_is_under_it_through() {
-    let backdrop = Backdrop { layers: vec![plain(4, [100, 0, 0, 128], placing(true, 0.0))], ..Default::default() };
-    // Premultiplied red at half over black.
-    assert_eq!(thumbnail(&backdrop, (2, 2)).pixels[..4], [100, 0, 0, 255]);
+    let backdrop = Backdrop { layers: vec![plain(4, [200, 0, 0, 128], placing(true, 0.0))], ..Default::default() };
+    // A red of 200 at half over black, blended in linear light as the GPU does: half the
+    // light of that red is 147 in sRGB.
+    assert_eq!(thumbnail(&backdrop, (2, 2)).pixels[..4], [147, 0, 0, 255]);
 }
 
 #[test]
@@ -61,4 +62,14 @@ fn smaller_copies_halve_down_to_one_pixel() {
     assert_eq!(picture.level_size(1), (2, 1));
     assert_eq!(picture.level_size(2), (1, 1));
     assert_eq!(picture.levels[2], vec![100; 4]);
+}
+
+#[test]
+fn smaller_copies_average_in_linear_light_and_ignore_clear_pixels() {
+    // Red beside black averages to half the light of red, 188 in sRGB, not 128.
+    let picture = Picture::new(2, 1, vec![255, 0, 0, 255, 0, 0, 0, 255]);
+    assert_eq!(picture.levels[1], vec![188, 0, 0, 255]);
+    // A clear pixel lends no colour, only its alpha.
+    let picture = Picture::new(2, 1, vec![255, 0, 0, 255, 0, 255, 0, 0]);
+    assert_eq!(picture.levels[1], vec![255, 0, 0, 128]);
 }

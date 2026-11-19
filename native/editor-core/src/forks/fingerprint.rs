@@ -45,7 +45,8 @@ const ENGINE: &str = "RobustToolbox";
 /// The name of the first line of a fingerprint of a folder that is not a git checkout.
 const NOT_GIT: &str = "not-git";
 /// Bumped when the pack or the bake changes form, so that what the cache holds is made again.
-pub const FORMAT: u32 = 1;
+/// 2: baked images keep straight alpha.
+pub const FORMAT: u32 = 2;
 
 /// The name of the file beside the engine side that holds the code fingerprint it was built from.
 pub const STAMP_FILE: &str = "code-fingerprint.txt";

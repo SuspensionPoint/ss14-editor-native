@@ -6,6 +6,7 @@ pub mod air;
 pub mod air_checks;
 pub mod air_draw;
 pub mod backdrop;
+pub mod colour;
 pub mod drawlist;
 pub mod engine;
 pub mod fields;

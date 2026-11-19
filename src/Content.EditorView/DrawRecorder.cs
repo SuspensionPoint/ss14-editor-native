@@ -79,8 +79,13 @@ public sealed class DrawRecorder : DrawingHandleWorld
 
     public override void DrawTextureRectsUnmodulated(Texture texture, ReadOnlySpan<WorldTextureRect> rects)
     {
+        // Each rectangle keeps its own colour, only the handle's is left out (Clyde.Rendering.cs
+        // DrawTextureBatch with applyModulation off).
         foreach (var rect in rects)
-            DrawTextureRectRegion(texture, rect.Quad, Color.White);
+        {
+            var quad = rect.Quad;
+            Add(texture, quad.BottomLeft, quad.BottomRight, quad.TopRight, quad.TopLeft, rect.Modulate, null, modulated: false);
+        }
     }
 #endif
 
@@ -146,9 +151,10 @@ public sealed class DrawRecorder : DrawingHandleWorld
     /// <summary>
     /// One rectangle: its four corners in world space (bottom-left, bottom-right, top-right,
     /// top-left), tint, texture id, and the part of the texture to show in pixels (left, top,
-    /// right, bottom).
+    /// right, bottom). The tint is the colour given times the handle's own, unless
+    /// <paramref name="modulated"/> is off.
     /// </summary>
-    private void Add(Texture texture, Vector2 bottomLeft, Vector2 bottomRight, Vector2 topRight, Vector2 topLeft, Color? modulate, UIBox2? subRegion)
+    private void Add(Texture texture, Vector2 bottomLeft, Vector2 bottomRight, Vector2 topRight, Vector2 topLeft, Color? modulate, UIBox2? subRegion, bool modulated = true)
     {
         if (!_textures.TryGetId(texture, out var id))
         {
@@ -156,7 +162,7 @@ public sealed class DrawRecorder : DrawingHandleWorld
             return;
         }
 
-        var color = (modulate ?? Color.White) * Modulate;
+        var color = modulated ? (modulate ?? Color.White) * Modulate : modulate ?? Color.White;
         // The engine marks an unshaded layer (one that ignores lighting) by sending its colour
         // as -1 - colour. Lighting is not part of what is recorded, so undo the marker.
         if (color.R < 0 || color.G < 0 || color.B < 0 || color.A < 0)
@@ -241,9 +247,10 @@ public sealed class TextureRegistry
         {
             case SpriteSpecifier.Rsi rsi:
             {
-                var resource = cache.GetResource<RSIResource>(SpriteSpecifierSerializer.TextureRoot / rsi.RsiPath);
-                if (resource.RSI.TryGetState(rsi.RsiState, out var state))
-                    RegisterState(resource.RSI, state);
+                // An RSI or a state that is not there is drawn as the engine's error state
+                // (SpriteSystem.GetState).
+                var state = sprites.GetState(rsi);
+                RegisterState(state.RSI, state);
                 break;
             }
             case SpriteSpecifier.Texture texture:
@@ -261,16 +268,57 @@ public sealed class TextureRegistry
         }
     }
 
-    public void RegisterLayers(SpriteComponent sprite)
+    /// <summary>
+    /// Registers what a sprite's layers will draw with, as SpriteSystem.RenderLayer picks it: the
+    /// layer's state as the engine resolved it, which is the error state when the RSI has no
+    /// such state, or else the layer's own texture.
+    /// </summary>
+    public void RegisterLayers(SpriteComponent sprite, IResourceCache cache)
     {
         foreach (var item in sprite.AllLayers)
         {
             if (item is not SpriteComponent.Layer layer)
                 continue;
 
-            if (layer.ActualRsi is { } rsi && rsi.TryGetState(layer.State, out var state))
-                RegisterState(rsi, state);
+            if (layer.ActualState is { } state)
+                RegisterState(state.RSI, state);
+            else if (layer.Texture is { } texture)
+                RegisterTexture(texture, cache);
         }
+    }
+
+    /// <summary>The resource path of each texture loaded as a file, made when one is not found.</summary>
+    private Dictionary<Texture, string>? _texturePaths;
+
+    /// <summary>Textures with no file, so that they are not looked for again.</summary>
+    private readonly HashSet<Texture> _unnamed = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// A texture a layer was given whole, by its file. The layer keeps only the texture, so its
+    /// file is found among the textures the resource cache has loaded.
+    /// </summary>
+    private void RegisterTexture(Texture texture, IResourceCache cache)
+    {
+        if (_ids.ContainsKey(texture) || _unnamed.Contains(texture))
+            return;
+
+        if (_texturePaths == null || !_texturePaths.ContainsKey(texture))
+        {
+            _texturePaths = new Dictionary<Texture, string>(ReferenceEqualityComparer.Instance);
+            foreach (var (path, resource) in cache.GetAllResources<TextureResource>())
+                _texturePaths.TryAdd(resource.Texture, path.ToString());
+        }
+
+        // A texture made in code has no file, and is left out as before.
+        if (!_texturePaths.TryGetValue(texture, out var file))
+        {
+            _unnamed.Add(texture);
+            return;
+        }
+
+        var id = _sources.Count;
+        _ids[texture] = id;
+        _sources.Add(new TextureSource(id, file, null, 0, texture.Width, texture.Height));
     }
 
     private void RegisterState(RSI rsi, RSI.State state)
@@ -286,21 +334,39 @@ public sealed class TextureRegistry
         };
 
         // An RSI state's image holds its frames in reading order: every frame of the first
-        // direction, then every frame of the next.
-        var index = 0;
+        // direction, then every frame of the next. When the directions' delays differ, the
+        // engine folds them into one timeline that fits every direction (RSIResource.FoldDelays),
+        // so a direction repeats an image frame for as long as it lasts. Each repeat is a texture
+        // of its own, cut from the same place of the sheet, and the repeats come one after
+        // another. So the count moves on only when the place a frame is cut from changes.
+        var index = -1;
         for (var direction = 0; direction < directions; direction++)
         {
+            Texture? previous = null;
             foreach (var frame in state.GetFrames((RsiDirection) direction))
             {
+                if (previous == null || !SamePlace(previous, frame))
+                    index++;
+                previous = frame;
+
                 if (!_ids.ContainsKey(frame))
                 {
                     var id = _sources.Count;
                     _ids[frame] = id;
                     _sources.Add(new TextureSource(id, rsi.Path.ToString(), state.StateId.Name, index, frame.Width, frame.Height));
                 }
-
-                index++;
             }
         }
+    }
+
+    /// <summary>Whether two frames are cut from the same place of the same sheet.</summary>
+    private static bool SamePlace(Texture a, Texture b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+
+        return a is AtlasTexture first && b is AtlasTexture second
+            && ReferenceEquals(first.SourceTexture, second.SourceTexture)
+            && first.SubRegion.Equals(second.SubRegion);
     }
 }
