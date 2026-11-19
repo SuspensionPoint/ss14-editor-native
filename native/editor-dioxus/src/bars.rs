@@ -1,8 +1,14 @@
-//! The menu bar, the tool bar down the left side, and the status bar, using the web editor's
-//! markup and class names (its MenuBar.tsx, Toolbar.tsx and StatusBar.tsx).
+//! The menu bar, the tool bar down the left side, and the status bar. The menu and status bars
+//! keep the web editor's markup and class names (its MenuBar.tsx and StatusBar.tsx). The tool
+//! bar is an art program's: an icon for each tool, in groups, with a label that shows under
+//! the mouse.
 
 use dioxus_native::prelude::*;
-use editor_core::session::{InHand, Tool, ToolEntry};
+use editor_core::session::InHand;
+use editor_core::toolbox::BarTool;
+
+use crate::icons::Icon;
+use crate::theme::{ICON, ICON_ON};
 
 use crate::dialogs::{self, Discarding};
 use crate::{bump, watch, with, Editor};
@@ -150,11 +156,11 @@ pub(crate) fn MenuBar() -> Element {
                                 }
                             }
                             if name == "View" && !backdrop.is_empty() {
-                                div { class: "px-3 py-1 text-[10px] text-muted", "{backdrop}" }
+                                div { class: "px-3 py-1 text-[11px] text-muted", "{backdrop}" }
                             }
                             if name == "Map" {
                                 for (index, why) in unavailable.iter().enumerate() {
-                                    div { key: "{index}", class: "px-3 py-1 text-[10px] text-muted", style: "max-width: 220px;", "{why}" }
+                                    div { key: "{index}", class: "px-3 py-1 text-[11px] text-muted", style: "max-width: 220px;", "{why}" }
                                 }
                             }
                         }
@@ -164,10 +170,10 @@ pub(crate) fn MenuBar() -> Element {
             div { class: "flex-1" }
             // Unsaved changes, as the web editor shows them at the right of its bar.
             if dirty {
-                span { class: "text-warning text-[10px]", "Unsaved changes" }
+                span { class: "text-warning text-[11px]", "Unsaved changes" }
             }
             // The fork the editor runs on, and its branch.
-            span { class: "text-muted text-[10px] ml-3", "{fork}" }
+            span { class: "text-muted text-[11px] ml-3", "{fork}" }
         }
         // A warning the start left, such as an engine side with no code fingerprint.
         if let Some(notice) = notice {
@@ -202,53 +208,61 @@ fn MenuRow(entry: Item) -> Element {
             span { class: "w-[18px] flex items-center justify-center", if checked == Some(true) { dialogs::Tick {} } }
             span { class: "flex-1", "{label}" }
             if !shortcut.is_empty() {
-                span { class: "text-muted ml-4 text-[10px]", "{shortcut}" }
+                span { class: "text-muted ml-4 text-[11px]", "{shortcut}" }
             }
         }
+    }
+}
+
+/// The icon of a toolbar tool.
+fn tool_icon(tool: BarTool) -> &'static str {
+    match tool {
+        BarTool::Select => "select",
+        BarTool::Pan => "pan",
+        BarTool::Pick => "pick",
+        BarTool::Paint => "paint",
+        BarTool::Erase => "erase",
+        BarTool::Fill => "fill",
+        BarTool::Room => "room",
+        BarTool::Link => "link",
+        BarTool::Cables => "cables",
+        BarTool::Pipes => "pipes",
     }
 }
 
 #[component]
 pub(crate) fn ToolBar() -> Element {
     let _ = watch();
-    let active = with(|editor| editor.session.tool());
-    // The web editor's three groups, the last of the tools that lay cables and pipes.
-    let group = |tool: Tool| if tool.is_infrastructure_tool() { 2 } else { usize::from(tool.is_entity_tool()) };
+    let active = with(|editor| editor.session.bar_tool());
+    // Blitz has no tooltips, so the name and key under the mouse are drawn beside the button.
+    let mut hovered = use_signal(|| None::<BarTool>);
     rsx! {
-        div { class: "flex flex-col w-[76px] bg-panel border-r border-subtle py-1 overflow-y-auto",
-            for (index, section) in ["Tiles", "Entities", "Infra"].into_iter().enumerate() {
-                if index > 0 {
-                    div { class: "h-px bg-subtle mx-2 my-1" }
+        div { class: "toolbar",
+            for group in 0..3 {
+                if group > 0 {
+                    div { class: "toolbar-rule" }
                 }
-                div { class: "text-[9px] text-muted uppercase text-center tracking-wider py-0.5", "{section}" }
-                for entry in Tool::ALL.into_iter().filter(|entry| group(entry.tool) == index) {
-                    ToolButton { key: "{entry.name}", tool: entry.tool, active: active == entry.tool }
+                for tool in BarTool::ALL.into_iter().filter(|tool| tool.group() == group) {
+                    div { key: "{tool.name()}", class: "tool-slot",
+                        button {
+                            class: if active == tool { "tool-button on" } else { "tool-button" },
+                            onclick: move |_| {
+                                with(|editor| editor.session.take_bar_tool(tool));
+                                bump();
+                            },
+                            onmouseenter: move |_| hovered.set(Some(tool)),
+                            onmouseleave: move |_| hovered.set(None),
+                            Icon { name: tool_icon(tool), colour: if active == tool { ICON_ON } else { ICON }, size: 20 }
+                        }
+                        if hovered() == Some(tool) {
+                            div { class: "tool-tip",
+                                span { "{tool.name()}" }
+                                span { class: "key-cap", "{tool.key()}" }
+                            }
+                        }
+                    }
                 }
             }
-            div { class: "text-[8px] text-muted text-center mt-2 leading-tight opacity-60", "Space+Drag" br {} "to pan" }
-        }
-    }
-}
-
-#[component]
-fn ToolButton(tool: Tool, active: bool) -> Element {
-    let Some(entry) = Tool::ALL.into_iter().find(|entry| entry.tool == tool) else { return rsx! {} };
-    let ToolEntry { name, key, .. } = entry;
-    // What it does, from the list of controls, as the button's hover text.
-    let title = match entry.control() {
-        Some(does) => format!("{does} ({key})"),
-        None => format!("{name} ({key})"),
-    };
-    rsx! {
-        button {
-            class: if active { "flex flex-col items-center justify-center w-full py-2 text-[10px] cursor-pointer border-none gap-0.5 bg-active text-accent" } else { "flex flex-col items-center justify-center w-full py-2 text-[10px] cursor-pointer border-none gap-0.5 bg-transparent text-muted hover:bg-hover hover:text-primary" },
-            title: "{title}",
-            onclick: move |_| {
-                with(|editor| editor.session.set_tool(tool));
-                bump();
-            },
-            span { class: "leading-tight", "{name}" }
-            span { class: "text-[8px] text-muted opacity-60", "{key}" }
         }
     }
 }
@@ -277,7 +291,7 @@ pub(crate) fn StatusBar() -> Element {
         (held, session.status_line().to_owned(), format!("{:.0}%", session.camera.zoom * 100.0), session.hover_text(), document, selected, session.floor_note())
     });
     rsx! {
-        div { class: "flex items-center h-6 bg-surface border-t border-subtle px-3 text-[10px] text-muted gap-4",
+        div { class: "flex items-center h-6 bg-surface border-t border-subtle px-3 text-[11px] text-muted gap-4",
             // What is in hand, with its picture. The web editor has no such place.
             if let Some((name, hover, picture, starred)) = held {
                 span { class: "flex items-center gap-1", title: "{hover}",

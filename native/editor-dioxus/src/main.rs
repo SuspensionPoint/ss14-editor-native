@@ -19,8 +19,10 @@ mod canvas;
 mod components;
 mod dialogs;
 mod find;
+mod icons;
 mod links;
 mod loading;
+mod options;
 mod palettes;
 mod placing;
 mod prefabs;
@@ -28,6 +30,7 @@ mod run;
 mod selection;
 mod start;
 mod start_view;
+mod theme;
 mod thumbs;
 
 use std::cell::{Cell, RefCell};
@@ -38,7 +41,8 @@ use std::sync::{Arc, OnceLock};
 use dioxus_native::prelude::*;
 use dioxus_native::winit::event::{ElementState, WindowEvent};
 use dioxus_native::winit::keyboard::{Key as WinitKey, KeyCode, NamedKey as WinitNamed, PhysicalKey};
-use editor_core::session::{arrows_reach_map, escape_to, Arrow, EscapeTo, Session, Tool, ToolEntry};
+use editor_core::session::{arrows_reach_map, escape_to, Arrow, EscapeTo, Session};
+use editor_core::toolbox::{Target, TOOL_KEYS};
 use editor_core::shell::{Launch, ShellArgs};
 use editor_core::textures::BakedTextures;
 use editor_core::validate::Finding;
@@ -62,6 +66,8 @@ pub(crate) struct Editor {
     pub(crate) textures: Arc<BakedTextures>,
     pub(crate) thumbs: thumbs::Thumbs,
     pub(crate) tab: PaletteTab,
+    /// The target the palette tabs last followed (`options::follow_target`).
+    pub(crate) seen_target: Option<Target>,
     pub(crate) tile_search: String,
     pub(crate) entity_search: String,
     pub(crate) decal_search: String,
@@ -129,12 +135,14 @@ pub(crate) struct Editor {
 impl Editor {
     /// The editor around a session that has started, with its textures, or empty ones that
     /// the session hands over once made (`Session::take_textures`).
-    pub(crate) fn new(session: Session, textures: Arc<BakedTextures>, engine_folder: PathBuf, fork_label: String, notice: Option<String>) -> Editor {
+    pub(crate) fn new(mut session: Session, textures: Arc<BakedTextures>, engine_folder: PathBuf, fork_label: String, notice: Option<String>) -> Editor {
+        first_tool(&mut session);
         Editor {
             session,
             textures,
             thumbs: thumbs::Thumbs::default(),
             tab: palettes::first_tab(),
+            seen_target: None,
             tile_search: String::new(),
             entity_search: String::new(),
             decal_search: String::new(),
@@ -210,6 +218,16 @@ impl Editor {
         let elsewhere = self.typing || self.dialog_open();
         self.session.dialog_open = self.dialog_open();
         self.session.held = editor_core::session::Held { shift: self.shift, ctrl: self.ctrl, space: self.space && !elsewhere };
+    }
+}
+
+/// A developer's switch for looking at a tool's options without a click: `SS14_EDITOR_TOOL`
+/// holds tool keys, which are pressed in turn as the editor opens. `S` opens on Select with
+/// Tiles, `P` on Paint placing entities.
+fn first_tool(session: &mut Session) {
+    for key in std::env::var("SS14_EDITOR_TOOL").unwrap_or_default().chars().filter(|key| TOOL_KEYS.contains(&key.to_ascii_uppercase())) {
+        session.key_down(key, false);
+        session.key_up(key);
     }
 }
 
@@ -439,9 +457,9 @@ fn key_event(event: &WindowEvent) {
                         return pressed && !event.repeat && !shift && !ctrl && editor.session.favourite_key(number);
                     }
                 }
-                // Tool keys, as the web editor has them: each handed on as it goes down and as
-                // it comes up, and not as the keyboard repeats it.
-                let Some(key) = letter.filter(|key| Tool::ALL.iter().any(|ToolEntry { key: tool_key, .. }| tool_key == key)) else { return false };
+                // Tool keys: each handed on as it goes down and as it comes up, and not as the
+                // keyboard repeats it.
+                let Some(key) = letter.filter(|key| TOOL_KEYS.contains(key)) else { return false };
                 if event.repeat {
                     return false;
                 }
@@ -525,6 +543,7 @@ fn app() -> Element {
             if editor.session.take_reveal() {
                 palettes::reveal_choice(editor);
             }
+            options::follow_target(editor);
             let title = match editor.session.doc.as_ref() {
                 Some(doc) => format!("{}{} - {TITLE}", doc.source, if doc.is_dirty() { " *" } else { "" }),
                 None => TITLE.to_owned(),
@@ -574,6 +593,7 @@ fn app() -> Element {
             },
             if open {
                 bars::MenuBar {}
+                options::OptionsBar {}
                 div { class: "flex flex-1 overflow-hidden",
                     bars::ToolBar {}
                     div { class: "canvas-area flex-1 flex flex-col overflow-hidden",

@@ -1,17 +1,35 @@
 /* What this interface adds to the web editor's built stylesheet: what the web editor styled
    inline, what this editor has and the web editor does not, and what Blitz needs said. */
 
-html, body { margin: 0; height: 100%; background: #0d1b2a; color: #e0e0e0; font-family: system-ui, "Segoe UI", sans-serif; }
+/* The editor's theme: a quiet neutral dark with one accent, blue, since many mappers tell red
+   from green badly. These take the place of the web editor's colours, which its stylesheet
+   names the same way. Spacing goes by 4 and 8 pixels. */
+:root {
+    --color-panel: #17191e;
+    --color-surface: #1e2128;
+    --color-elevated: #262a33;
+    --color-subtle: #2f343e;
+    --color-primary: #e6e8ee;
+    --color-muted: #a3aab6;
+    --color-accent: #4c8dff;
+    --color-active: #213458;
+    --color-hover: #2a2f39;
+    --color-danger: #ef6a5f;
+    --color-warning: #f0a33a;
+    --radius-sm: 5px;
+}
+
+html, body { margin: 0; height: 100%; background: #17191e; color: #e6e8ee; font-family: system-ui, "Segoe UI", sans-serif; }
 
 /* The scroll bars' thumb. The web editor leaves its bars to Chrome, whose thumb is this grey.
    Blitz draws no track unless one is given, so the track is left clear. */
 html { scrollbar-color: #c1c1c1 transparent; }
 
 /* The map: the widget fills its area, and the text over it lets the mouse through. */
-.map-surface { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; user-select: none; background: #111122; }
+.map-surface { position: absolute; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; user-select: none; background: #101216; }
 .map-widget { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 .map-label { position: absolute; transform: translate(-50%, -100%); background: rgba(0, 0, 0, 0.8); color: #fff; font-size: 12px; padding: 2px 4px; border-radius: 2px; white-space: nowrap; pointer-events: none; }
-.map-ghost { position: absolute; transform: translateX(-50%); font-size: 10px; line-height: 1.2; text-align: center; white-space: nowrap; pointer-events: none; }
+.map-ghost { position: absolute; transform: translateX(-50%); font-size: 11px; line-height: 1.2; text-align: center; white-space: nowrap; pointer-events: none; }
 
 /* The list the wheel steps through. */
 .wheel-list { position: absolute; width: 220px; background: rgba(26, 26, 46, 0.95); border: 1px solid #2a2a4a; border-radius: 4px; pointer-events: none; overflow: hidden; font-family: Consolas, monospace; font-size: 12px; }
@@ -28,14 +46,14 @@ html { scrollbar-color: #c1c1c1 transparent; }
 .air-legend-row { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; }
 .air-swatch { width: 20px; height: 20px; flex-shrink: 0; border-radius: 2px; }
 .air-legend-label { color: #ffffff; }
-.air-legend-meaning { color: #888888; font-size: 10px; }
-.air-legend-note { color: #8a8aa8; font-size: 10px; margin-bottom: 6px; }
+.air-legend-meaning { color: #a3aab6; font-size: 11px; }
+.air-legend-note { color: #a3aab6; font-size: 11px; margin-bottom: 6px; }
 .air-scale-box { position: relative; height: 12px; margin: 4px 8px 0 8px; }
 .air-scale { display: flex; height: 12px; border-radius: 2px; overflow: hidden; }
 .air-scale-part { flex: 1; height: 12px; }
 .air-safe { position: absolute; top: -3px; height: 18px; box-sizing: border-box; border: 2px solid #ffffff; border-radius: 3px; }
 .air-ticks { position: relative; height: 14px; margin: 4px 8px 4px 8px; }
-.air-tick { position: absolute; top: 0; transform: translateX(-50%); color: #cccccc; font-size: 10px; white-space: nowrap; }
+.air-tick { position: absolute; top: 0; transform: translateX(-50%); color: #cccccc; font-size: 11px; white-space: nowrap; }
 .air-label { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px; height: 20px; box-sizing: border-box; padding: 0 9px 0 3px; background: rgba(10, 10, 22, 0.88); border: 1.5px solid #ffffff; border-radius: 10px; color: #f2f2f8; font-size: 11px; font-weight: 600; white-space: nowrap; pointer-events: none; }
 .air-label-icon { width: 14px; height: 14px; flex-shrink: 0; }
 .air-label-text { padding-left: 1px; }
@@ -52,7 +70,7 @@ html { scrollbar-color: #c1c1c1 transparent; }
 
 /* Blitz fills a ticked checkbox with the text colour and draws the tick in white, and leaves
    accent-color alone, so the colour is said here to keep the tick visible. */
-.check { color: #4488ff; width: 13px; height: 13px; flex-shrink: 0; }
+.check { color: #4c8dff; width: 14px; height: 14px; flex-shrink: 0; }
 
 /* The favourite's star on a palette's row: shown while the row is under the mouse, and always
    on a favourite. On a tile's square it sits in the top right corner on a dark spot. */
@@ -61,7 +79,7 @@ html { scrollbar-color: #c1c1c1 transparent; }
 .fav-corner { position: absolute; right: 0; top: 0; padding: 1px; background: rgba(13, 27, 42, 0.75); border-radius: 0 0 0 3px; }
 
 /* What is in hand, at the left of the status bar. */
-.in-hand { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; background: #16213e; border: 1px solid #4488ff; border-radius: 2px; }
+.in-hand { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; background: #262a33; border: 1px solid #4c8dff; border-radius: 4px; }
 .pixelated { image-rendering: pixelated; }
 
 /* The backdrop gallery: a tile for each backdrop, its picture over its name. The one under
@@ -198,3 +216,58 @@ html { scrollbar-color: #c1c1c1 transparent; }
 .start-map-fork { flex-shrink: 0; color: #8a8aa8; font-size: 11px; }
 .start-map-go { display: flex; flex-shrink: 0; }
 .start-empty { padding: 18px; border: 1px dashed #2a2a4a; border-radius: 8px; color: #888888; text-align: center; }
+
+/* The tool bar down the left: an icon button for each tool, in groups, and the name and key
+   of the one under the mouse beside it. It sits over the map so that the label can. */
+.toolbar { position: relative; z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 52px; flex-shrink: 0; padding: 8px 0; background: var(--color-surface); border-right: 1px solid var(--color-subtle); }
+.toolbar-rule { width: 28px; height: 1px; margin: 4px 0; background: var(--color-subtle); }
+.tool-slot { position: relative; }
+.tool-button { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: none; border-radius: 8px; background: transparent; cursor: pointer; }
+.tool-button:hover { background: var(--color-hover); }
+.tool-button.on { background: var(--color-accent); }
+.tool-tip { position: absolute; left: 44px; top: 6px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--color-elevated); border: 1px solid var(--color-subtle); border-radius: 6px; color: var(--color-primary); font-size: 12px; white-space: nowrap; pointer-events: none; z-index: 100; }
+.key-cap { min-width: 18px; padding: 0 4px; border: 1px solid var(--color-subtle); border-radius: 4px; background: var(--color-surface); color: var(--color-muted); font-size: 11px; text-align: center; }
+.icon { display: block; flex-shrink: 0; }
+
+/* The options bar under the menu bar: the tool in hand and its options in one row. */
+.options-bar { position: relative; z-index: 30; display: flex; align-items: center; gap: 8px; height: 44px; flex-shrink: 0; padding: 0 12px; background: var(--color-panel); border-bottom: 1px solid var(--color-subtle); color: var(--color-primary); font-size: 12px; white-space: nowrap; }
+.options-tool { min-width: 52px; font-size: 13px; font-weight: 600; }
+.options-rule { width: 1px; height: 24px; margin: 0 4px; background: var(--color-subtle); flex-shrink: 0; }
+.options-label { color: var(--color-muted); font-size: 12px; }
+.options-warning { color: var(--color-warning); font-size: 12px; }
+.hint-text { color: var(--color-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.segmented { display: flex; align-items: center; gap: 2px; padding: 2px; background: var(--color-surface); border: 1px solid var(--color-subtle); border-radius: 8px; }
+.segment { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: none; border-radius: 6px; background: transparent; color: var(--color-primary); font-size: 12px; cursor: pointer; }
+.segment:hover { background: var(--color-hover); }
+.segment.on { background: var(--color-accent); color: #ffffff; }
+.segment.off { opacity: 0.4; cursor: default; }
+.segment.off:hover { background: transparent; }
+.option-check { display: flex; align-items: center; gap: 6px; color: var(--color-primary); font-size: 12px; cursor: pointer; }
+.option-number { width: 64px; }
+.swatch { display: inline-block; width: 16px; height: 16px; border: 1px solid var(--color-subtle); border-radius: 4px; flex-shrink: 0; }
+.swatch.small { width: 10px; height: 10px; border-radius: 3px; }
+
+/* A choice shown as a chip, and the box that opens under it to change it. */
+.popover-anchor { position: relative; }
+.chip { display: flex; align-items: center; gap: 6px; height: 30px; max-width: 220px; padding: 0 8px 0 4px; border: 1px solid var(--color-subtle); border-radius: 8px; background: var(--color-surface); color: var(--color-primary); font-size: 12px; cursor: pointer; }
+.chip:hover, .chip.on { border-color: var(--color-accent); }
+.chip.static { cursor: default; }
+.chip.static:hover { border-color: var(--color-subtle); }
+.chip-picture { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 4px; background: var(--color-panel); }
+.chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-caret { display: flex; color: var(--color-muted); }
+.popover { position: absolute; top: 36px; left: 0; z-index: 60; width: 300px; padding: 8px; background: var(--color-elevated); border: 1px solid var(--color-subtle); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); white-space: normal; }
+.popover-stack { display: flex; flex-direction: column; gap: 8px; }
+.tile-choice { width: 32px; height: 32px; padding: 0; overflow: hidden; border: 1px solid var(--color-subtle); border-radius: 4px; background: var(--color-panel); cursor: pointer; flex-shrink: 0; }
+.tile-choice:hover { border-color: var(--color-accent); }
+.list-choice { display: flex; align-items: center; gap: 6px; width: 100%; height: 30px; padding: 0 4px; border: none; border-radius: 6px; background: transparent; color: var(--color-primary); font-size: 12px; text-align: left; cursor: pointer; }
+.list-choice:hover { background: var(--color-hover); }
+
+/* The side panel: its tabs, and a header that opens and shuts each section. */
+.section-head { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 12px; border: none; background: var(--color-surface); color: var(--color-primary); font-size: 12px; font-weight: 600; cursor: pointer; }
+.section-head:hover { background: var(--color-hover); }
+.tabs { display: flex; gap: 2px; padding: 4px; background: var(--color-surface); border-bottom: 1px solid var(--color-subtle); }
+.tab { flex: 1; height: 28px; padding: 0 4px; border: none; border-radius: 6px; background: transparent; color: var(--color-muted); font-size: 12px; cursor: pointer; }
+.tab:hover { background: var(--color-hover); color: var(--color-primary); }
+.tab.on { background: var(--color-active); color: #ffffff; font-weight: 600; }
+.tab.star { flex: 0 0 34px; display: flex; align-items: center; justify-content: center; }

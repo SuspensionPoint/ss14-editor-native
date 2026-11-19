@@ -13,7 +13,7 @@ use crate::toolbox::{BarTool, KeyAction, SelectMode, SelectTargets, Shape, Targe
 /// The toolbar's state, and the settings file its options are kept in.
 #[derive(Default)]
 pub(in crate::session) struct Tooling {
-    pub(super) toolbox: Toolbox,
+    pub(in crate::session) toolbox: Toolbox,
     /// None keeps the options in the session only.
     kept: Option<PathBuf>,
     /// The options as last written, so that only a change writes the file.

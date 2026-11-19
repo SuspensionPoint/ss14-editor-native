@@ -1,19 +1,16 @@
 //! The selection panel. With one entity selected it shows what is known about it, with several it
 //! shows a summary, and there are buttons to turn, delete and deselect them. With only decals
-//! selected it shows their fields. Also the cable and pipe choices and the layers. Uses the markup
-//! of the web editor's EntityInfoPanel.tsx, DecalInfoPanel.tsx, InfrastructurePanel.tsx and
-//! LayerPanel.tsx.
+//! selected it shows their fields. Also the layers. Uses the markup of the web editor's
+//! EntityInfoPanel.tsx, DecalInfoPanel.tsx and LayerPanel.tsx. The cable and pipe choices are in
+//! the options bar (options.rs).
 
 use dioxus_native::prelude::*;
 use editor_core::air::AirView;
-use editor_core::session::{decal_colour_bytes, CableKind, DecalField, PipeNetwork, Session, Tool, PIPE_COLOURS};
+use editor_core::session::{decal_colour_bytes, DecalField, Session};
 use editor_core::shell::{layer, LAYER_NAMES, T_RAY_LAYER};
 
 use crate::palettes::{ColourField, NumberField};
 use crate::{bump, watch, with};
-
-/// The colour the web editor marks disposal with.
-const DISPOSAL: (u8, u8, u8) = (0x88, 0x66, 0x44);
 
 /// A row of a label and its value, as the web editor's entity panel has them.
 #[component]
@@ -35,7 +32,7 @@ fn Buttons(buttons: Vec<(&'static str, &'static str, bool)>) -> Element {
         div { class: "flex gap-1 mt-2", style: "flex-wrap: wrap;",
             for (index, (label, key, danger)) in buttons.into_iter().enumerate() {
                 button {
-                    class: "flex-1 px-1.5 py-1 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover",
+                    class: "flex-1 px-1.5 py-1 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover",
                     style: if danger { "color: #cc4444;" } else { "" },
                     title: "{key}",
                     onclick: move |_| {
@@ -83,7 +80,7 @@ pub(crate) fn SelectionPanel() -> Element {
                 _ => rsx! { SeveralSelected { buttons: buttons.clone() } },
             }
             if decals > 0 && count > 0 {
-                div { class: "text-muted text-[10px] mt-1", if decals == 1 { "and 1 decal" } else { "and {decals} decals" } }
+                div { class: "text-muted text-[11px] mt-1", if decals == 1 { "and 1 decal" } else { "and {decals} decals" } }
             }
         }
     }
@@ -97,7 +94,7 @@ fn SeveralSelected(buttons: Vec<(&'static str, &'static str, bool)>) -> Element 
         div { class: "flex justify-between items-center mb-1.5",
             span { class: "font-bold text-xs", "{heading}" }
         }
-        div { class: "text-muted text-[10px] mb-1.5", "{breakdown}" }
+        div { class: "text-muted text-[11px] mb-1.5", "{breakdown}" }
         Buttons { buttons }
     }
 }
@@ -149,7 +146,7 @@ fn OneSelected(buttons: Vec<(&'static str, &'static str, bool)>) -> Element {
             }
         }
         if !description.is_empty() {
-            div { class: "text-muted text-[10px] mt-1 italic", "{description}" }
+            div { class: "text-muted text-[11px] mt-1 italic", "{description}" }
         }
         // Its links and list entries, then its name, its containers, and what the map file
         // stores for it beyond its prototype, each editable.
@@ -186,7 +183,7 @@ fn DecalPanel() -> Element {
     let cleanable = summary.cleanable.unwrap_or(false);
     let mixed = |shared: bool| rsx! {
         if !shared {
-            span { class: "text-muted italic text-[10px]", "mixed" }
+            span { class: "text-muted italic text-[11px]", "mixed" }
         }
     };
     rsx! {
@@ -200,7 +197,7 @@ fn DecalPanel() -> Element {
                 Field { label: "Id", value: format!("{} on grid {grid}", decal.id) }
                 Field { label: "Position", value: format!("{:.2}, {:.2}", decal.x, decal.y) }
             } else {
-                div { class: "text-muted text-[10px] mb-1.5", "{summary.breakdown}" }
+                div { class: "text-muted text-[11px] mb-1.5", "{summary.breakdown}" }
             }
         }
         div { class: "mt-2 space-y-1.5",
@@ -212,14 +209,14 @@ fn DecalPanel() -> Element {
                 match (&summary.color, own.clone()) {
                     (Some(_), Some(text)) => rsx! {
                         ColourField { value: text, onchange: move |text: String| change(DecalField::Color(Some(text))) }
-                        button { class: "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover", title: "Leave the decal's own colours",
+                        button { class: "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover", title: "Leave the decal's own colours",
                             onclick: move |_| change(DecalField::Color(None)),
                             "No colour"
                         }
                     },
                     (Some(_), None) => rsx! {
                         ColourField { value: "", onchange: move |text: String| change(DecalField::Color(Some(text))) }
-                        span { class: "text-muted text-[10px]", "none" }
+                        span { class: "text-muted text-[11px]", "none" }
                     },
                     (None, _) => rsx! {
                         ColourField { value: "", onchange: move |text: String| change(DecalField::Color(Some(text))) }
@@ -230,7 +227,7 @@ fn DecalPanel() -> Element {
             div { class: "flex items-center gap-2",
                 label { class: "text-[11px] text-muted w-12", "Angle" }
                 NumberField { value: degrees, onchange: move |value: f64| change(DecalField::Angle(value.to_radians())) }
-                span { class: "text-[10px] text-muted", "deg" }
+                span { class: "text-[11px] text-muted", "deg" }
                 {mixed(summary.angle.is_some())}
             }
             div { class: "flex items-center gap-2",
@@ -246,14 +243,14 @@ fn DecalPanel() -> Element {
         }
         div { class: "flex gap-1 mt-2", style: "flex-wrap: wrap;",
             if let Some(prototype) = summary.prototype.clone() {
-                button { class: "px-1.5 py-1 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover",
+                button { class: "px-1.5 py-1 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover",
                     title: "Select every {prototype} decal on the grid",
                     onclick: move |_| { with(|editor| editor.session.select_decals_like()); bump(); },
                     "Select all of this kind"
                 }
             }
             if summary.color.is_some() && summary.same_colour > 1 {
-                button { class: "px-1.5 py-1 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover",
+                button { class: "px-1.5 py-1 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover",
                     title: "Select every decal on the grid with this colour",
                     onclick: move |_| { with(|editor| editor.session.select_decals_coloured()); bump(); },
                     "Select all ({summary.same_colour})"
@@ -262,9 +259,9 @@ fn DecalPanel() -> Element {
         }
         if summary.color.is_some() && summary.same_colour > 1 {
             div { class: "flex items-center gap-2 mt-2",
-                span { class: "text-muted text-[10px]", "Recolour all to" }
+                span { class: "text-muted text-[11px]", "Recolour all to" }
                 ColourField { value: recolor, onchange: move |text: String| { with(|editor| editor.recolor = text); bump(); } }
-                button { class: "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover",
+                button { class: "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover",
                     title: "Change the {summary.same_colour} decals with this colour to the colour chosen here",
                     onclick: move |_| {
                         with(|editor| {
@@ -274,69 +271,6 @@ fn DecalPanel() -> Element {
                         bump();
                     },
                     "Apply"
-                }
-            }
-        }
-    }
-}
-
-/// The panel of the cable and pipe tools: the kind of cable, the network of pipe and the
-/// colour of a gas pipe. A choice takes its tool in hand. A kind the fork does not have is greyed.
-#[component]
-pub(crate) fn InfrastructurePanel() -> Element {
-    let _ = watch();
-    let (tool, cables, gas, disposal, network, current) = with(|editor| {
-        let session = &editor.session;
-        let cables: Vec<(CableKind, bool, bool)> = CableKind::ALL.into_iter().map(|kind| (kind, session.tool() == Tool::Cable && session.cable_kind() == kind, session.cable_available(kind))).collect();
-        (session.tool(), cables, session.pipe_network_available(PipeNetwork::Gas), session.pipe_network_available(PipeNetwork::Disposal), session.pipe_network(), session.pipe_colour().map(str::to_owned))
-    });
-    let choice = |swatch: String, name: String, chosen: bool, enabled: bool, pick: Box<dyn Fn(&mut Session)>| {
-        rsx! {
-            button {
-                class: if chosen { "w-full px-2 py-1 rounded-sm border text-primary text-[10px] cursor-pointer mb-0.5 text-left flex items-center gap-1.5 bg-active border-accent" } else { "w-full px-2 py-1 rounded-sm border text-primary text-[10px] cursor-pointer mb-0.5 text-left flex items-center gap-1.5 bg-transparent border-subtle hover:bg-hover" },
-                disabled: !enabled,
-                style: if enabled { "" } else { "opacity: 0.4;" },
-                onclick: move |_| {
-                    with(|editor| pick(&mut editor.session));
-                    bump();
-                },
-                span { class: "inline-block w-2 h-2 rounded-sm shrink-0", style: "background: {swatch};" }
-                "{name}"
-            }
-        }
-    };
-    let rgb = |(red, green, blue): (u8, u8, u8)| format!("rgb({red}, {green}, {blue})");
-    rsx! {
-        div { class: "p-3",
-            div { class: "text-muted text-[10px] uppercase tracking-wider mb-1", "Cables" }
-            for (kind, chosen, available) in cables {
-                {choice(rgb(kind.colour()), kind.label().to_owned(), chosen, available, Box::new(move |session: &mut Session| session.choose_cable(kind)))}
-            }
-            div { class: "text-muted text-[10px] uppercase tracking-wider mb-1 mt-3", "Pipes" }
-            for (name, text) in PIPE_COLOURS {
-                {
-                    let bytes = decal_colour_bytes(text).unwrap_or([255; 4]);
-                    let chosen = tool == Tool::Pipe && network == PipeNetwork::Gas && current.as_deref() == Some(text);
-                    choice(rgb((bytes[0], bytes[1], bytes[2])), format!("{name} pipe"), chosen, gas, Box::new(move |session: &mut Session| session.choose_pipe(PipeNetwork::Gas, Some(text.to_owned()))))
-                }
-            }
-            {choice(rgb(DISPOSAL), "Disposal pipe".to_owned(), tool == Tool::Pipe && network == PipeNetwork::Disposal, disposal, Box::new(|session: &mut Session| session.choose_pipe(PipeNetwork::Disposal, None)))}
-            // Any other colour for a gas pipe, or none for the prototype's own.
-            if network == PipeNetwork::Gas {
-                div { class: "flex items-center gap-2 mt-2",
-                    span { class: "text-[11px] text-primary", "Colour" }
-                    input { r#type: "checkbox", class: "check", checked: current.is_some(),
-                        oninput: move |event| {
-                            let on = event.checked();
-                            with(|editor| editor.session.choose_pipe(PipeNetwork::Gas, on.then(|| PIPE_COLOURS[0].1.to_owned())));
-                            bump();
-                        }
-                    }
-                    if let Some(text) = current.clone() {
-                        ColourField { value: text, onchange: move |text: String| { with(|editor| editor.session.choose_pipe(PipeNetwork::Gas, Some(text))); bump(); } }
-                    } else {
-                        span { class: "text-[10px] text-muted", "the pipe's own" }
-                    }
                 }
             }
         }
@@ -398,7 +332,7 @@ pub(crate) fn LayersPanel() -> Element {
             div { class: "flex gap-1 mt-1", style: if air { "margin-left: 20px;" } else { "margin-left: 20px; opacity: 0.55;" },
                 for view in AirView::ALL {
                     button {
-                        class: if air && view == air_view { "flex-1 px-1.5 py-1 rounded-sm border border-accent text-[10px] cursor-pointer bg-accent text-white" } else { "flex-1 px-1.5 py-1 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover" },
+                        class: if air && view == air_view { "flex-1 px-1.5 py-1 rounded-sm border border-accent text-[11px] cursor-pointer bg-accent text-white" } else { "flex-1 px-1.5 py-1 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover" },
                         onclick: move |_| {
                             with(|editor| {
                                 editor.session.air_view = view;

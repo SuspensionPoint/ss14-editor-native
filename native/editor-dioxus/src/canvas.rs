@@ -578,7 +578,7 @@ fn RegionMenu(x: f32, y: f32, entries: Vec<editor_core::session::MenuEntry>) -> 
                         }
                     },
                     span { class: "flex-1", "{entry.label}" }
-                    span { class: "text-muted ml-4 text-[10px]", "{entry.shortcut}" }
+                    span { class: "text-muted ml-4 text-[11px]", "{entry.shortcut}" }
                 }
             }
         }

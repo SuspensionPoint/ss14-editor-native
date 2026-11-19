@@ -395,6 +395,11 @@ impl Toolbox {
         }
     }
 
+    /// Notes a tile as last in hand for the Tiles target, and leaves the target as it is.
+    pub fn remember_tile(&mut self, id: &str) {
+        self.last_tile = Some(id.to_owned());
+    }
+
     /// What was last in hand for a target, as the palette holds it. Nothing if none was.
     pub fn recall(&self, target: Target) -> Palette {
         let recalled = match target {

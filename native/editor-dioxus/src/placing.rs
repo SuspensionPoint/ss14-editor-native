@@ -1,6 +1,7 @@
-//! How walls are placed: the block under the entity palette that lays a tile under new walls,
-//! and the Room tool's panel with its floor, edge tile and wall. Blitz has no drop-down lists,
-//! so a tile or a wall is chosen from a short list that opens under its row.
+//! How walls are placed, as the options bar shows it: laying a tile under new walls for Paint
+//! on entities, and the Room tool's floor, edge tile, wall and Intersection switch. Blitz has
+//! no drop-down lists, so a tile or a wall is chosen from a short list in a box that opens
+//! under its button (`Popover`).
 
 use dioxus_native::prelude::*;
 use editor_core::palette::tile_order;
@@ -31,23 +32,34 @@ fn wall_row(editor: &mut Editor, index: usize) -> (String, Option<String>) {
 #[component]
 fn Pictured(picture: Option<String>, name: String) -> Element {
     rsx! {
-        span { class: "inline-block bg-surface border border-subtle rounded-sm flex-shrink-0", style: "width: 24px; height: 24px;",
+        span { class: "chip-picture",
             if let Some(picture) = picture {
-                img { src: "{picture}", class: "pixelated", style: "width: 22px; height: 22px;" }
+                img { src: "{picture}", class: "pixelated", style: "width: 20px; height: 20px;" }
             }
         }
-        span { class: "truncate flex-1 text-[11px] text-primary", "{name}" }
+        span { class: "chip-name", "{name}" }
     }
 }
 
-/// The small button at the end of a row that opens or closes its list.
+/// A button showing a choice, with its picture and name, that opens a box under it to change
+/// the choice in. The box closes when its button is pressed again, or when the box calls
+/// for it through the signal it is given.
 #[component]
-fn ChangeButton(open: Signal<bool>) -> Element {
+fn Popover(picture: Option<String>, name: String, title: String, open: Signal<bool>, children: Element) -> Element {
     let mut open = open;
     rsx! {
-        button { class: "px-2 py-0.5 text-[10px] bg-surface border border-subtle rounded-sm text-primary cursor-pointer hover:border-accent",
-            onclick: move |_| open.toggle(),
-            if open() { "Close" } else { "Change" }
+        div { class: "popover-anchor",
+            button { class: if open() { "chip on" } else { "chip" }, title: "{title}",
+                onclick: move |_| open.toggle(),
+                Pictured { picture, name }
+                span { class: "chip-caret", crate::dialogs::Chevron { open: open() } }
+            }
+            if open() {
+                div { class: "popover",
+                    onmousedown: move |event| event.stop_propagation(),
+                    {children}
+                }
+            }
         }
     }
 }
@@ -69,15 +81,15 @@ fn TilePicker(onpick: EventHandler<String>) -> Element {
         }).collect()
     });
     rsx! {
-        div { class: "space-y-1",
+        div { class: "popover-stack",
             TextField { value: search(), placeholder: "Search tiles...", oninput: move |text: String| search.set(text) }
-            div { class: "flex flex-wrap gap-1 overflow-y-auto", style: "max-height: 140px;",
+            div { class: "flex flex-wrap gap-1 overflow-y-auto", style: "max-height: 168px;",
                 if tiles.is_empty() {
-                    div { class: "text-muted text-[10px] p-1 italic", "No results" }
+                    div { class: "hint-text", "No results" }
                 }
                 for (id, picture) in tiles {
                     button { key: "{id}", title: "{id}",
-                        class: "w-8 h-8 rounded-sm border cursor-pointer p-0 overflow-hidden bg-panel shrink-0 border-subtle hover:border-accent",
+                        class: "tile-choice",
                         onclick: {
                             let id = id.clone();
                             move |_| onpick.call(id.clone())
@@ -94,27 +106,21 @@ fn TilePicker(onpick: EventHandler<String>) -> Element {
     }
 }
 
-/// The row of the tile laid under new walls and on a room's edge, with its list.
+/// The tile laid under new walls and on a room's edge, as a button that opens a list of tiles.
 #[component]
-fn FloorTileRow(label: String) -> Element {
+fn FloorTileChooser(title: String) -> Element {
     let _ = watch();
-    let open = use_signal(|| false);
+    let mut open = use_signal(|| false);
     let (id, picture) = with(|editor| {
         let id = editor.session.floor_tile().to_owned();
         let picture = tile_picture(editor, &id);
         (id, picture)
     });
     rsx! {
-        div { class: "flex items-center gap-2",
-            label { class: "text-[11px] text-muted w-12", "{label}" }
-            Pictured { picture, name: id }
-            ChangeButton { open }
-        }
-        if open() {
+        Popover { picture, name: id, title, open,
             TilePicker {
                 onpick: move |id: String| {
                     with(|editor| editor.session.set_floor_tile(&id));
-                    let mut open = open;
                     open.set(false);
                     bump();
                 }
@@ -123,35 +129,32 @@ fn FloorTileRow(label: String) -> Element {
     }
 }
 
-/// Under the entity palette: whether a brush lays a tile under the walls, windows, grilles and
+/// For Paint on entities: whether a brush lays a tile under the walls, windows, grilles and
 /// doors it puts on cells with no tile, and which tile.
 #[component]
 pub(crate) fn WallPlacement() -> Element {
     let _ = watch();
     let on = with(|editor| editor.session.floor_under_walls());
     rsx! {
-        div { class: "border-t border-subtle px-2 py-2 space-y-1.5",
-            div { class: "text-[10px] text-muted uppercase tracking-wider", "Placement" }
-            label { class: "flex items-center gap-1 text-[11px] text-primary cursor-pointer",
-                title: "Walls, windows, grilles and doors placed where there's no tile get this tile under them",
-                input { r#type: "checkbox", class: "check", checked: on,
-                    oninput: move |event| {
-                        let on = event.checked();
-                        with(|editor| editor.session.set_floor_under_walls(on));
-                        bump();
-                    }
+        label { class: "option-check",
+            title: "Walls, windows, grilles and doors placed where there's no tile get this tile under them",
+            input { r#type: "checkbox", class: "check", checked: on,
+                oninput: move |event| {
+                    let on = event.checked();
+                    with(|editor| editor.session.set_floor_under_walls(on));
+                    bump();
                 }
-                "Lay a tile under walls"
             }
-            FloorTileRow { label: "Tile" }
+            "Tile under walls"
         }
+        FloorTileChooser { title: "The tile laid under walls" }
     }
 }
 
-/// The Room tool's panel: the floor it lays inside (the tile in hand), the tile on its edge,
-/// the wall it builds with, with a list to choose another, and its Intersection switch.
+/// The Room tool's options: the floor it lays inside (the tile in hand), the tile on its
+/// edge, the wall it builds with, with a list to choose another, and its Intersection switch.
 #[component]
-pub(crate) fn RoomPanel() -> Element {
+pub(crate) fn RoomOptions() -> Element {
     let _ = watch();
     let mut choosing = use_signal(|| false);
     let mut search = use_signal(String::new);
@@ -174,61 +177,47 @@ pub(crate) fn RoomPanel() -> Element {
         };
         (floor, wall, walls, editor.session.room_intersection())
     });
+    let (wall_name, wall_picture) = wall.unwrap_or(("No wall chosen".to_owned(), None));
     rsx! {
-        div { class: "px-2 py-2 space-y-1.5",
-            div { class: "flex items-center gap-2",
-                label { class: "text-[11px] text-muted w-12", "Floor" }
-                if let Some((id, picture)) = floor {
-                    Pictured { picture, name: id }
-                } else {
-                    span { class: "text-[11px] text-warning", "Choose a tile in the Tiles tab" }
-                }
-            }
-            FloorTileRow { label: "Edge" }
-            div { class: "flex items-center gap-2",
-                label { class: "text-[11px] text-muted w-12", "Wall" }
-                if let Some((name, picture)) = wall {
-                    Pictured { picture, name }
-                } else {
-                    span { class: "text-[11px] text-warning flex-1", "No wall chosen" }
-                }
-                ChangeButton { open: choosing }
-            }
-            if choosing() {
-                div { class: "space-y-1",
-                    TextField { value: search(), placeholder: "Search walls...", oninput: move |text: String| search.set(text) }
-                    div { class: "overflow-y-auto", style: "max-height: 160px;",
-                        if walls.is_empty() {
-                            div { class: "text-muted text-[10px] p-1 italic", "No results" }
-                        }
-                        for (index, name, picture) in walls {
-                            button { key: "{index}",
-                                class: "flex items-center gap-1.5 px-1 py-0.5 w-full text-left border-none rounded-sm bg-transparent cursor-pointer hover:bg-hover",
-                                style: "height: 28px;",
-                                onclick: move |_| {
-                                    with(|editor| editor.session.set_room_wall(index));
-                                    choosing.set(false);
-                                    bump();
-                                },
-                                Pictured { picture, name }
-                            }
+        span { class: "options-label", "Floor" }
+        if let Some((id, picture)) = floor {
+            span { class: "chip static", title: "The tile in hand goes inside", Pictured { picture, name: id } }
+        } else {
+            span { class: "options-warning", "Choose a tile in the Tiles tab" }
+        }
+        span { class: "options-label", "Edge" }
+        FloorTileChooser { title: "The tile under the walls on the edge" }
+        span { class: "options-label", "Wall" }
+        Popover { picture: wall_picture, name: wall_name, title: "The wall on the edge", open: choosing,
+            div { class: "popover-stack",
+                TextField { value: search(), placeholder: "Search walls...", oninput: move |text: String| search.set(text) }
+                div { class: "overflow-y-auto", style: "max-height: 220px;",
+                    if walls.is_empty() {
+                        div { class: "hint-text", "No results" }
+                    }
+                    for (index, name, picture) in walls {
+                        button { key: "{index}", class: "list-choice",
+                            onclick: move |_| {
+                                with(|editor| editor.session.set_room_wall(index));
+                                choosing.set(false);
+                                bump();
+                            },
+                            Pictured { picture, name }
                         }
                     }
                 }
             }
-            div {
-                label { class: "flex items-center gap-1 text-[11px] text-primary cursor-pointer",
-                    input { r#type: "checkbox", class: "check", checked: joining,
-                        oninput: move |event| {
-                            let on = event.checked();
-                            with(|editor| editor.session.set_room_intersection(on));
-                            bump();
-                        }
-                    }
-                    "Intersection"
+        }
+        div { class: "options-rule" }
+        label { class: "option-check", title: "Joins rooms it overlaps into one. Good for hallways and extensions",
+            input { r#type: "checkbox", class: "check", checked: joining,
+                oninput: move |event| {
+                    let on = event.checked();
+                    with(|editor| editor.session.set_room_intersection(on));
+                    bump();
                 }
-                div { class: "text-[10px] text-muted pl-4", "Joins rooms it overlaps into one. Good for hallways and extensions." }
             }
+            "Join overlapping rooms"
         }
     }
 }

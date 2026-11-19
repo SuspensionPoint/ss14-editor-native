@@ -733,8 +733,16 @@ impl Session {
                     self.set_status(format!(
                         "Engine ready (document kernel {document_kernel_ms} ms, view kernel {view_kernel_ms} ms, warm-up {warm_up_ms} ms). Opening the map"
                     ));
-                    self.palette = tiles.iter().find(|t| t.id == "FloorSteel").or(tiles.first()).map_or(Palette::None, |t| Palette::Tile(t.id.clone()));
-                    self.chosen();
+                    // The first tile in hand, which the Tiles target takes back. With another
+                    // target already set, as by a key before the engine was ready, the palette
+                    // keeps to that target.
+                    let first = tiles.iter().find(|t| t.id == "FloorSteel").or(tiles.first()).map(|t| t.id.clone());
+                    if let Some(first) = first {
+                        self.tooling.toolbox.remember_tile(&first);
+                        if self.target() == crate::toolbox::Target::Tiles {
+                            self.palette = Palette::Tile(first);
+                        }
+                    }
                     self.tile_sprites = tiles.iter().map(|tile| (tile.id.clone(), tile.sprite.clone())).collect();
                     self.tiles = tiles;
                     self.set_prototypes(prototypes);

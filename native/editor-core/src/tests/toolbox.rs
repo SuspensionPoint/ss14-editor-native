@@ -176,6 +176,10 @@ fn each_target_gives_back_what_was_last_in_hand_for_it() {
     // An empty palette leaves the target as it was.
     toolbox.remember(&Palette::None);
     assert_eq!(toolbox.target, Target::Tiles);
+    // A tile noted alone leaves the target too.
+    toolbox.target = Target::Entities;
+    toolbox.remember_tile("Lattice");
+    assert_eq!((toolbox.target, toolbox.recall(Target::Tiles)), (Target::Entities, Palette::Tile("Lattice".into())));
 }
 
 #[test]
