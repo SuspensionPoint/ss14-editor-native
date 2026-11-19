@@ -38,6 +38,7 @@ mod favourites;
 mod find;
 mod grids;
 mod palettes;
+mod problems;
 mod tools;
 mod zoom;
 
@@ -50,6 +51,7 @@ pub use favourites::{FavouriteRow, FavouriteState, FAVOURITE_KEYS};
 pub use crate::forks::settings::{Favourite, FavouriteKind};
 pub use grids::{GridRow, GRID_FILE, MAP_GROUND};
 pub use palettes::{shown_name, InHand};
+pub use problems::PLATING;
 pub use tools::{
     arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MenuAction, MenuEntry, Outline,
     OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, ToolEntry, CONTROLS, PIPE_COLOURS,
@@ -307,6 +309,8 @@ pub struct Session {
     pub air_view: AirView,
     /// The overlay's rectangles as last built, and what they were built from.
     air_drawn: air::AirDrawn,
+    /// The Problems overlay: its switch and its badges.
+    problems: problems::Problems,
     /// The open map's backdrop, once it has been read; a map the game gives none has no layers.
     pub backdrop: Option<BackdropInfo>,
     /// A backdrop that has arrived and has not been handed to whoever draws yet.
@@ -438,6 +442,7 @@ impl Session {
         session.palettes = palettes::Palettes::scan(&fork, wake.clone());
         session.locale = Locale::read(&fork, wake.clone());
         session.favourites = favourites::Favourites::load(crate::forks::settings::Settings::file(), &fork);
+        session.problems = problems::Problems::load(crate::forks::settings::Settings::file(), &fork);
         session.flooring = Flooring::load(crate::forks::settings::Settings::file(), &fork);
         std::thread::Builder::new()
             .name("engine".into())
@@ -501,6 +506,7 @@ impl Session {
             show_air: false,
             air_view: AirView::default(),
             air_drawn: air::AirDrawn::default(),
+            problems: problems::Problems::default(),
             backdrop: None,
             backdrop_arrived: None,
             gallery: backdrops::Gallery::default(),

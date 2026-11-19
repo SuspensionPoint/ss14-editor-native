@@ -11,18 +11,27 @@
 //! rooms and walls (`crate::air_checks`): uneven air in a room, floors with no air, and air in a
 //! wall. Another finds a grid of floors with no atmosphere, which Fix grid atmos can give it. The
 //! last finds open ends of disposal pipes, where the game dumps trash and tears up the floor.
+//!
+//! Three more come from mappers. Stacked walls: two walls, windows or doors on one cell. Duplicates:
+//! the same thing placed twice on one cell. Walls with no floor: a wall, window or door on a cell
+//! with no tile, or off every grid, which the game leaves loose. What counts as a wall, a window
+//! or a door is [`blocker`]. These three and the two of floors under walls and doors are cheap,
+//! and the Problems overlay runs them again after every edit ([`quick`]).
 
 use std::collections::{HashMap, HashSet};
 
 use crate::air::{room_text, AirMirror, GridAir};
 use crate::air_checks::RoomFaults;
 use crate::links::{alarm_of, Alarm, LinkMirror};
-use crate::model::{Doc, Prototype, SPACE};
+use crate::model::{Doc, Entity, Prototype, SPACE};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Rule {
     FloorUnderWall,
     DoorWithoutFloor,
+    WallWithoutFloor,
+    StackedWalls,
+    Duplicates,
     DanglingLink,
     UnlinkedAirAlarm,
     UnlinkedFireAlarm,
@@ -45,9 +54,12 @@ pub enum Severity {
 
 impl Rule {
     /// Every rule, in the order the results list them.
-    pub const ALL: [Rule; 12] = [
+    pub const ALL: [Rule; 15] = [
         Rule::FloorUnderWall,
         Rule::DoorWithoutFloor,
+        Rule::WallWithoutFloor,
+        Rule::StackedWalls,
+        Rule::Duplicates,
         Rule::DanglingLink,
         Rule::UnlinkedAirAlarm,
         Rule::UnlinkedFireAlarm,
@@ -65,6 +77,9 @@ impl Rule {
         match self {
             Rule::FloorUnderWall => "Floor tiles under walls",
             Rule::DoorWithoutFloor => "Doors without floor tiles",
+            Rule::WallWithoutFloor => "Walls with no floor",
+            Rule::StackedWalls => "Stacked walls",
+            Rule::Duplicates => "Duplicates",
             Rule::DanglingLink => "Dangling device references",
             Rule::UnlinkedAirAlarm => "Unlinked air alarms",
             Rule::UnlinkedFireAlarm => "Unlinked fire alarms",
@@ -85,6 +100,9 @@ impl Rule {
             Rule::DanglingLink => Severity::Error,
             Rule::FloorUnderWall
             | Rule::DoorWithoutFloor
+            | Rule::WallWithoutFloor
+            | Rule::StackedWalls
+            | Rule::Duplicates
             | Rule::UnlinkedAirAlarm
             | Rule::UnlinkedFireAlarm
             | Rule::UnknownDecal
@@ -131,6 +149,250 @@ impl Finding {
     pub fn fixes_air(&self) -> Option<i32> {
         matches!(self.rule, Rule::UnfilledFloor | Rule::NoAtmosphere).then_some(self.grid)
     }
+
+    /// What Validate Map's button on this finding does, if it has one.
+    pub fn fix(&self) -> Option<Fix> {
+        match self.rule {
+            Rule::UnfilledFloor | Rule::NoAtmosphere => Some(Fix::Air(self.grid)),
+            Rule::StackedWalls | Rule::Duplicates => Some(Fix::RemoveExtras),
+            Rule::WallWithoutFloor if self.grid != 0 => Some(Fix::LayPlating),
+            Rule::WallWithoutFloor => self.entity.map(Fix::Select),
+            _ => None,
+        }
+    }
+}
+
+/// What a finding's button does in Validate Map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fix {
+    /// Fix grid atmos on this grid.
+    Air(i32),
+    /// Delete all but one of what is stacked on the cell (`extras`).
+    RemoveExtras,
+    /// Lay plating on the cell.
+    LayPlating,
+    /// Select this entity. Something off every grid has no tile to lay.
+    Select(i32),
+}
+
+impl Fix {
+    /// The button's words.
+    pub fn label(self) -> &'static str {
+        match self {
+            Fix::Air(_) => "Fix",
+            Fix::RemoveExtras => "Remove extras",
+            Fix::LayPlating => "Lay plating",
+            Fix::Select(_) => "Select",
+        }
+    }
+
+    /// What the button does, for its tooltip.
+    pub fn does(self) -> &'static str {
+        match self {
+            Fix::Air(_) => "Run Fix grid atmos on this grid. Every floor gets standard station air, and one undo reverts it.",
+            Fix::RemoveExtras => "Delete the extras and keep one. One undo puts them back.",
+            Fix::LayPlating => "Put plating under it and anchor it. One undo takes both away.",
+            Fix::Select(_) => "Select it on the map. It is on no grid, so there is no floor to lay.",
+        }
+    }
+}
+
+/// What a wall, window or door is, as the rules of walls tell them ([`blocker`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blocker {
+    Wall,
+    Window,
+    Door,
+}
+
+/// Whether a prototype is a wall, a window or a door that fills its whole cell, and which.
+/// Two of these on one cell are always a mistake. Each is airtight on all four sides in the
+/// game.
+///
+/// - A wall has the Wall tag.
+/// - A window has the Window tag and the Airtight component. A directional window is only a
+///   pane on one side, and a cell may hold several: it has the DirectionalWindow tag, or
+///   Directional in its id (Starlight's brass one has no tag).
+/// - A door has the Door and Airtight components. Three kinds are left out, since the game puts
+///   them on the cell of a window or a door on purpose, or on one side of a cell. A firelock
+///   (the Firelock component) goes on a door's cell. Shutters and blast doors go over windows
+///   and doors, and are told by Shutters or BlastDoor in their ids. A windoor is a thin door
+///   on one side of its cell, with Windoor in its id.
+///
+/// Anything with the Diagonal tag fills only half its cell, and is left out. A grille, a girder
+/// or a table is none of these, so a window on a grille is no fault.
+pub fn blocker(prototype: &Prototype) -> Option<Blocker> {
+    let tagged = |tag: &str| prototype.tags.iter().any(|known| &**known == tag);
+    let named = |part: &str| prototype.id.contains(part);
+    if tagged("Diagonal") {
+        return None;
+    }
+    if prototype.is_wall() {
+        return Some(Blocker::Wall);
+    }
+    if tagged("Window") && !tagged("DirectionalWindow") && !named("Directional") && prototype.has("Airtight") {
+        return Some(Blocker::Window);
+    }
+    let cover = prototype.has("Firelock") || named("Shutters") || named("BlastDoor") || named("Windoor");
+    if prototype.has("Door") && prototype.has("Airtight") && !cover {
+        return Some(Blocker::Door);
+    }
+    None
+}
+
+/// Whether the game stacks entities of a prototype on one cell on purpose: a marker or a
+/// spawner. Such a prototype has the Marker component, a component whose name ends in Spawner
+/// (EntityTableSpawner, RandomSpawner, ConditionalSpawner and the like), or a SpawnPoint. The
+/// engine reports only the server's components, and Marker is the client's, so the spawners
+/// are told by their own.
+fn stacks_on_purpose(prototype: &Prototype) -> bool {
+    prototype.components.iter().any(|name| &**name == "Marker" || &**name == "SpawnPoint" || name.ends_with("Spawner"))
+}
+
+/// The cells of grids with two or more entities anchored on them: the grid, the cell, and
+/// those entities by uid. By grid, then row, then column.
+type Cells<'d> = Vec<(i32, (i32, i32), Vec<&'d Entity>)>;
+
+/// The cells of grids with two or more entities anchored on them, of those standing
+/// ([`standing`]). A sort and one pass, which is quicker on a station than a map of every cell.
+fn anchored_cells<'d>(standing: &[Standing<'d>]) -> Cells<'d> {
+    let mut anchored: Vec<&Standing<'d>> = standing.iter().filter(|(entity, grid, _)| *grid != 0 && entity.anchored).collect();
+    // Standing is in the order of uids, and a stable sort keeps it within a cell.
+    anchored.sort_by_key(|(_, grid, cell)| (*grid, cell.1, cell.0));
+    let mut cells: Cells<'d> = Vec::new();
+    for group in anchored.chunk_by(|a, b| (a.1, a.2) == (b.1, b.2)) {
+        if group.len() >= 2 {
+            cells.push((group[0].1, group[0].2, group.iter().map(|(entity, ..)| *entity).collect()));
+        }
+    }
+    cells
+}
+
+/// A list of names as a sentence has them: "a", "a and b", "a, b and c".
+fn and_list(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// The groups of each cell that the stacked walls rule finds: the walls, windows and doors
+/// anchored on one cell of a grid, by uid, where there are two or more. By grid, then cell.
+fn stacked_groups<'a, 'd>(cells: &Cells<'d>, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Cells<'d> {
+    cells
+        .iter()
+        .filter_map(|(grid, cell, entities)| {
+            let walls: Vec<&Entity> = entities.iter().copied().filter(|entity| prototype(&entity.prototype).and_then(blocker).is_some()).collect();
+            (walls.len() >= 2).then_some((*grid, *cell, walls))
+        })
+        .collect()
+}
+
+/// Two or more walls, windows or doors ([`blocker`]) anchored on one cell of a grid. A wall
+/// on a wall, a window in a wall or a door in a window. Found at the cell, about the first of
+/// them by uid, which a fix keeps. By grid, then row, then column.
+pub fn stacked_walls<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    stacked_walls_in(&anchored_cells(&standing(doc)), prototype)
+}
+
+fn stacked_walls_in<'a>(cells: &Cells, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    stacked_groups(cells, prototype)
+        .into_iter()
+        .map(|(grid, cell, walls)| {
+            let names: Vec<&str> = walls.iter().map(|entity| entity.prototype.as_str()).collect();
+            let message = format!("{} are stacked at ({}, {}). One cell holds one wall, window or door.", and_list(&names), cell.0, cell.1);
+            Finding { rule: Rule::StackedWalls, message, grid, cell, entity: Some(walls[0].uid), decal: None }
+        })
+        .collect()
+}
+
+/// How an entity is turned, in whole quarter turns from 0 to 3.
+fn quarters(rotation: f64) -> i64 {
+    (rotation / std::f64::consts::FRAC_PI_2).round().rem_euclid(4.0) as i64
+}
+
+/// The groups the duplicates rule finds: entities of one prototype anchored on one cell of a
+/// grid, turned the same way, two or more, by uid. By grid, cell, then the first uid.
+fn duplicate_groups<'a, 'd>(cells: &Cells<'d>, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Cells<'d> {
+    let mut groups: Cells<'d> = Vec::new();
+    for (grid, cell, entities) in cells {
+        let mut same: Vec<((&str, i64), Vec<&Entity>)> = Vec::new();
+        for &entity in entities {
+            if prototype(&entity.prototype).is_some_and(stacks_on_purpose) {
+                continue;
+            }
+            let key = (entity.prototype.as_str(), quarters(entity.rotation));
+            match same.iter_mut().find(|(known, _)| *known == key) {
+                Some((_, list)) => list.push(entity),
+                None => same.push((key, vec![entity])),
+            }
+        }
+        // In the order of their first uids, as the entities of a cell are.
+        groups.extend(same.into_iter().filter(|(_, list)| list.len() >= 2).map(|(_, list)| (*grid, *cell, list)));
+    }
+    groups
+}
+
+/// The same prototype anchored two or more times on one cell of a grid, turned the same way:
+/// two cables, two pipes, two lights on one wall. Markers and spawners are left out
+/// (`stacks_on_purpose`), as is the same thing turned another way, such as a light on each
+/// wall of a corner or two pipes that cross. Found at the cell, about the first by uid, which a
+/// fix keeps.
+pub fn duplicates<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    duplicates_in(&anchored_cells(&standing(doc)), prototype)
+}
+
+fn duplicates_in<'a>(cells: &Cells, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    duplicate_groups(cells, prototype)
+        .into_iter()
+        .map(|(grid, cell, same)| {
+            let message = format!("{} is on ({}, {}) {} times.", same[0].prototype, cell.0, cell.1, same.len());
+            Finding { rule: Rule::Duplicates, message, grid, cell, entity: Some(same[0].uid), decal: None }
+        })
+        .collect()
+}
+
+/// What a fix of a stacked walls or duplicates finding deletes: all on its cell but the one it
+/// keeps, as the map is now. Nothing for a finding of another rule, or one no longer there.
+pub fn extras<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype>, finding: &Finding) -> Vec<i32> {
+    let cells = anchored_cells(&standing(doc));
+    let groups = match finding.rule {
+        Rule::StackedWalls => stacked_groups(&cells, prototype),
+        Rule::Duplicates => duplicate_groups(&cells, prototype),
+        _ => return Vec::new(),
+    };
+    groups
+        .into_iter()
+        .find(|(grid, cell, entities)| *grid == finding.grid && *cell == finding.cell && Some(entities[0].uid) == finding.entity)
+        .map_or_else(Vec::new, |(.., entities)| entities[1..].iter().map(|entity| entity.uid).collect())
+}
+
+/// A wall, window or door ([`blocker`]) on a cell of a grid with no tile, or on the map off
+/// every grid. The game takes anything anchored off a cell with no tile, so it loads loose: it
+/// can drift and be pulled, and seals no room. One on the map is found at the cell of the
+/// map it is in. By uid.
+pub fn walls_without_floor<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    walls_without_floor_in(doc, &standing(doc), prototype)
+}
+
+fn walls_without_floor_in<'a>(doc: &Doc, standing: &[Standing], prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for &(entity, grid, cell) in standing {
+        // The tile first: it is cheaper to read than the prototype.
+        let off = grid == 0 || doc.tile_at(grid, cell) == SPACE;
+        let uid = entity.uid;
+        if !off || prototype(&entity.prototype).and_then(blocker).is_none() {
+            continue;
+        }
+        let message = if grid == 0 {
+            format!("{} at ({}, {}) is on no grid. In the game it floats loose in space.", entity.prototype, cell.0, cell.1)
+        } else {
+            format!("{} at ({}, {}) has no tile under it. In the game it comes loose, can drift, and doesn't seal the room.", entity.prototype, cell.0, cell.1)
+        };
+        findings.push(Finding { rule: Rule::WallWithoutFloor, message, grid, cell, entity: Some(uid), decal: None });
+    }
+    findings
 }
 
 /// Walls that may stand on any tile, though they have the Wall tag. The web editor's list,
@@ -169,19 +431,22 @@ const WALL_TILES: &[&str] = &["Plating", "Lattice", SPACE];
 /// The tiles that are no floor under a door.
 const NO_FLOOR: &[&str] = &[SPACE, "Lattice"];
 
+/// An entity standing on a grid or on the map, the grid (0 for the map) and the cell.
+type Standing<'d> = (&'d Entity, i32, (i32, i32));
+
 /// The entities that stand on a grid or on the map, inside nothing, in the order of their
 /// uids, with the grid (0 for the map) and the cell.
-fn standing(doc: &Doc) -> Vec<(i32, i32, (i32, i32))> {
-    let mut found: Vec<(i32, i32, (i32, i32))> = doc
+fn standing(doc: &Doc) -> Vec<Standing<'_>> {
+    let mut found: Vec<Standing> = doc
         .entities
         .values()
         .filter(|entity| !entity.contained && (doc.grid(entity.parent).is_some() || entity.parent == doc.map_uid))
         .map(|entity| {
             let grid = if entity.parent == doc.map_uid { 0 } else { entity.parent };
-            (entity.uid, grid, (entity.x.floor() as i32, entity.y.floor() as i32))
+            (entity, grid, (entity.x.floor() as i32, entity.y.floor() as i32))
         })
         .collect();
-    found.sort_unstable_by_key(|&(uid, ..)| uid);
+    found.sort_unstable_by_key(|(entity, ..)| entity.uid);
     found
 }
 
@@ -189,15 +454,19 @@ fn standing(doc: &Doc) -> Vec<(i32, i32, (i32, i32))> {
 /// has the Wall tag and not the Diagonal tag, and is not one of the walls the game allows
 /// anywhere. Tags an entity sets for itself are not in the mirror, so the prototype's count.
 pub fn floor_under_wall<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
+    floor_under_wall_in(doc, &standing(doc), prototype)
+}
+
+fn floor_under_wall_in<'a>(doc: &Doc, standing: &[Standing], prototype: impl Fn(&str) -> Option<&'a Prototype>) -> Vec<Finding> {
     let mut findings = Vec::new();
-    for (uid, grid, cell) in standing(doc) {
-        let entity = &doc.entities[&uid];
+    for &(entity, grid, cell) in standing {
+        let uid = entity.uid;
         if ALLOWED_WALLS.contains(&entity.prototype.as_str()) {
             continue;
         }
         let Some(prototype) = prototype(&entity.prototype) else { continue };
         let tagged = |tag: &str| prototype.tags.iter().any(|known| &**known == tag);
-        if !tagged("Wall") || tagged("Diagonal") {
+        if !prototype.is_wall() || tagged("Diagonal") {
             continue;
         }
         let tile = doc.tile_at(grid, cell);
@@ -219,9 +488,13 @@ pub fn floor_under_wall<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Pr
 /// A door on space or lattice. A door is an entity whose prototype id has Airlock or Firelock
 /// in it, as the web editor tells them.
 pub fn door_without_floor(doc: &Doc) -> Vec<Finding> {
+    door_without_floor_in(doc, &standing(doc))
+}
+
+fn door_without_floor_in(doc: &Doc, standing: &[Standing]) -> Vec<Finding> {
     let mut findings = Vec::new();
-    for (uid, grid, cell) in standing(doc) {
-        let entity = &doc.entities[&uid];
+    for &(entity, grid, cell) in standing {
+        let uid = entity.uid;
         if !entity.prototype.contains("Airlock") && !entity.prototype.contains("Firelock") {
             continue;
         }
@@ -483,8 +756,8 @@ pub fn open_disposals<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prot
     let mut units = HashSet::new();
     let mut conveyors = HashSet::new();
     let mut order = Vec::new();
-    for (uid, grid, cell) in standing(doc) {
-        let entity = &doc.entities[&uid];
+    for (entity, grid, cell) in standing(doc) {
+        let uid = entity.uid;
         if grid == 0 || !entity.anchored {
             continue;
         }
@@ -549,8 +822,7 @@ pub fn open_disposals<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prot
 /// Every rule's findings, in the order of [`Rule::ALL`]. The rules of links are checked only
 /// once the engine has listed the links, and the rooms and their air once it has read the air.
 pub fn validate<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype> + Copy, decal_ids: &HashSet<&str>, pryable: &HashSet<&str>) -> Vec<Finding> {
-    let mut findings = floor_under_wall(doc, prototype);
-    findings.extend(door_without_floor(doc));
+    let mut findings = quick(doc, prototype);
     if let Some(links) = doc.links.as_ref() {
         findings.extend(dangling_links(doc, links));
         findings.extend(unlinked_alarms(doc, links, Alarm::Air, prototype));
@@ -563,6 +835,22 @@ pub fn validate<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype>
     findings.extend(uneven_air(doc));
     findings.extend(air_in_walls(doc));
     findings.extend(open_disposals(doc, prototype, pryable));
+    findings
+}
+
+/// The findings of the rules that read only the entities and tiles of the mirror, in the order
+/// of [`Rule::ALL`]: floors under walls, doors without floors, walls with no floor, stacked walls
+/// and duplicates. They are cheap enough to run again after every edit, as the Problems overlay
+/// does.
+pub fn quick<'a>(doc: &Doc, prototype: impl Fn(&str) -> Option<&'a Prototype> + Copy) -> Vec<Finding> {
+    // What stands where is found once for all five.
+    let standing = standing(doc);
+    let cells = anchored_cells(&standing);
+    let mut findings = floor_under_wall_in(doc, &standing, prototype);
+    findings.extend(door_without_floor_in(doc, &standing));
+    findings.extend(walls_without_floor_in(doc, &standing, prototype));
+    findings.extend(stacked_walls_in(&cells, prototype));
+    findings.extend(duplicates_in(&cells, prototype));
     findings
 }
 

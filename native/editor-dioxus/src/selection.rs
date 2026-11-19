@@ -343,15 +343,16 @@ pub(crate) fn InfrastructurePanel() -> Element {
     }
 }
 
-/// The layers panel: a checkbox for each layer, the connections view, and the air overlay
-/// with its four views.
+/// The layers panel: a checkbox for each layer, the connections view, the air overlay with its
+/// four views, and the Problems overlay.
 ///
 /// Every checkbox here and elsewhere listens for `input`. Blitz ticks a clicked box itself and
 /// sends only an `input` event. It has no `change` event, so `onchange` is never called.
 #[component]
 pub(crate) fn LayersPanel() -> Element {
     let _ = watch();
-    let (mut layers, connections, air, air_view) = with(|editor| (editor.session.layers, editor.session.show_connections, editor.session.show_air, editor.session.air_view));
+    let (mut layers, connections, air, air_view, problems) =
+        with(|editor| (editor.session.layers, editor.session.show_connections, editor.session.show_air, editor.session.air_view, editor.session.problems_shown()));
     let shown: Vec<(usize, &str, bool)> = LAYER_NAMES.iter().enumerate().map(|(index, name)| (index, *name, *layer(&mut layers, index))).collect();
     rsx! {
         div { class: "p-3",
@@ -408,6 +409,16 @@ pub(crate) fn LayersPanel() -> Element {
                         "{view.name()}"
                     }
                 }
+            }
+            label { class: "flex items-center gap-2 py-0.5 mt-1 text-primary text-[11px] cursor-pointer select-none", title: "Mark stacked walls, duplicates and walls with no floor on the map",
+                input { r#type: "checkbox", class: "check accent-accent w-3 h-3", checked: problems,
+                    oninput: move |event| {
+                        let on = event.checked();
+                        with(|editor| editor.session.show_problems(on));
+                        bump();
+                    }
+                }
+                "Problems"
             }
         }
     }
