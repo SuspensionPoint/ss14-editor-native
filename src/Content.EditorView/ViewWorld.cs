@@ -379,27 +379,55 @@ public sealed partial class ViewWorld
 
         // The client draws decals straight from this component, so filling it is all it takes.
         var decals = _entMan.EnsureComponent<DecalGridComponent>(uid);
-        decals.ChunkCollection.ChunkCollection.Clear();
-        decals.DecalIndex.Clear();
+        ClearDecals(decals);
         foreach (var decal in scene.Decals)
             PutDecal(decals, decal);
     }
 
-#if FORK_DECAL_CHUNK_ENTITIES
-    // A fork that keeps its decals on chunk entities gives none from the kernel
-    // (Editor.Kernel/Documents.cs), so there are none to put here.
-    private static void PutDecal(DecalGridComponent comp, SceneDecal scene)
-    {
-    }
-
-    private static void RemoveDecal(DecalGridComponent comp, uint id)
-    {
-    }
-#else
-    private static void PutDecal(DecalGridComponent comp, SceneDecal scene)
+    private static Decal ToDecal(SceneDecal scene)
     {
         Color? color = scene.Color == null ? null : Color.FromHex(scene.Color);
-        var decal = new Decal(new Vector2(scene.X, scene.Y), scene.Prototype, color, new Angle(scene.Angle), scene.ZIndex, scene.Cleanable);
+        return new Decal(new Vector2(scene.X, scene.Y), scene.Prototype, color, new Angle(scene.Angle), scene.ZIndex, scene.Cleanable);
+    }
+
+#if FORK_DECAL_CHUNK_ENTITIES
+    // A fork that keeps its decals on chunk entities numbers them in a way the grid's own decal
+    // component cannot hold (Editor.Kernel/Documents.cs ChunkDecals). They are kept here by
+    // grid, and drawn from here as the game's DecalOverlay draws them (RecordDecals).
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DecalGridComponent, SortedDictionary<int, Decal>> _chunkDecals = new();
+
+    private SortedDictionary<int, Decal> ChunkDecalsOf(DecalGridComponent comp) => _chunkDecals.GetOrCreateValue(comp);
+
+    private void ClearDecals(DecalGridComponent comp)
+    {
+        _chunkDecals.Remove(comp);
+    }
+
+    private void PutDecal(DecalGridComponent comp, SceneDecal scene) => ChunkDecalsOf(comp)[scene.Id] = ToDecal(scene);
+
+    private void RemoveDecal(DecalGridComponent comp, uint id) => ChunkDecalsOf(comp).Remove((int) id);
+
+    /// <summary>A grid's decals with their numbers, in no order.</summary>
+    private IEnumerable<(long Id, Decal Decal)> DecalsOf(DecalGridComponent comp) =>
+        _chunkDecals.TryGetValue(comp, out var decals) ? decals.Select(pair => ((long) pair.Key, pair.Value)) : [];
+#else
+    private static void ClearDecals(DecalGridComponent comp)
+    {
+        comp.ChunkCollection.ChunkCollection.Clear();
+        comp.DecalIndex.Clear();
+    }
+
+    /// <summary>A grid's decals with their numbers, in no order.</summary>
+    private static IEnumerable<(long Id, Decal Decal)> DecalsOf(DecalGridComponent comp)
+    {
+        foreach (var chunk in comp.ChunkCollection.ChunkCollection.Values)
+        foreach (var (id, decal) in chunk.Decals)
+            yield return (id, decal);
+    }
+
+    private static void PutDecal(DecalGridComponent comp, SceneDecal scene)
+    {
+        var decal = ToDecal(scene);
         var indices = SharedDecalSystem.GetChunkIndices(decal.Coordinates);
         var chunks = comp.ChunkCollection.ChunkCollection;
         if (!chunks.TryGetValue(indices, out var chunk))

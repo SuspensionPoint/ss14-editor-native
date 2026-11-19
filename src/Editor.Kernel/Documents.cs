@@ -432,8 +432,12 @@ public sealed class DocumentManager
             foreach (var chunk in decalGrid.ChunkCollection.ChunkCollection.Values)
             foreach (var (id, decal) in chunk.Decals)
                 decals.Add(DescribeDecal(id, decal));
-            decals.Sort((a, b) => a.Id.CompareTo(b.Id));
         }
+
+#if FORK_DECAL_CHUNK_ENTITIES
+        decals.AddRange(ChunkDecals(uid));
+#endif
+        decals.Sort((a, b) => a.Id.CompareTo(b.Id));
 
         return new SceneGrid(
             uid.Id,
@@ -465,10 +469,38 @@ public sealed class DocumentManager
     // a known decal prototype, on a tile that is not space, filed under its 32-tile chunk.
     //
     // A fork that keeps its decals on chunk entities of the grid (src/Directory.Build.props) has
-    // no decals in that component, so none are shown, and an edit of one is refused. The chunk
-    // entities are loaded and saved as they are, with their decals.
+    // none in that component. Its decals are read from the chunk entities and shown
+    // (ChunkDecals), but an edit of one is refused. The chunk entities are loaded and saved as
+    // they are, with their decals.
 
 #if FORK_DECAL_CHUNK_ENTITIES
+    /// <summary>
+    /// A grid's decals as the Space Wizards keep them: on chunk entities rooted on the grid
+    /// (Robust.Shared/GameStates/ChunkEntityComponent.cs), each with the decals of its chunk by
+    /// an id of their own (Content.Shared/Decals/DecalChunkComponent.cs). A decal is numbered by
+    /// its chunk's place among the grid's chunks, by x and then y, from one, times 65536, plus
+    /// its id in the chunk. The numbers then order the decals as the game's DecalOverlay does
+    /// after their z-index (Content.Client/Decals/Overlays/DecalOverlay.cs CompareDecalIndex),
+    /// and stay apart from those a grid may still keep in its load-only DecalGridComponent.
+    /// </summary>
+    private IEnumerable<SceneDecal> ChunkDecals(EntityUid grid)
+    {
+        var chunks = new List<(Vector2i Chunk, DecalChunkComponent Decals)>();
+        var query = _entMan.AllEntityQueryEnumerator<Robust.Shared.GameStates.ChunkEntityComponent, DecalChunkComponent>();
+        while (query.MoveNext(out _, out var chunk, out var decals))
+        {
+            if (chunk.Root == grid)
+                chunks.Add((chunk.Chunk, decals));
+        }
+
+        chunks.Sort((a, b) => a.Chunk.X != b.Chunk.X ? a.Chunk.X.CompareTo(b.Chunk.X) : a.Chunk.Y.CompareTo(b.Chunk.Y));
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            foreach (var (id, decal) in chunks[i].Decals.Decals)
+                yield return DescribeDecal((uint) ((i + 1) * 65536 + id), decal);
+        }
+    }
+
     private const string DecalsOnChunks = "This fork keeps its decals on chunk entities of the grid, which the editor cannot edit yet. They are kept as they are when the map is saved.";
 
     private static Decal? FindDecal(EntityUid grid, uint id) => throw new KernelException(DecalsOnChunks);

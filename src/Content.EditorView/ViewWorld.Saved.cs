@@ -235,37 +235,22 @@ public sealed partial class ViewWorld
     }
 
     /// <summary>
-    /// For the checks: a shown entity's component, where its data differs from the prototype's,
-    /// written as the kernel writes it. Known is false when the client has no such component.
-    /// Data is null when the entity lacks it, and empty when it is as the prototype has it.
+    /// For the checks: a shown entity's component, all its data written as the kernel writes
+    /// it. Known is false when the client has no such component. Data is null when the entity
+    /// lacks it.
     /// </summary>
-    public (bool Known, MappingDataNode? Data, IReadOnlySet<string> Fields) SavedOf(int document, int uid, string name)
+    public (bool Known, MappingDataNode? Data) SavedOf(int document, int uid, string name)
     {
         if (!_factory.TryGetRegistration(name, out var registration))
-            return (false, null, new HashSet<string>());
+            return (false, null);
 
         if (!_documents.TryGetValue(document, out var doc) || !doc.Entities.TryGetValue(uid, out var view)
             || !_entMan.TryGetComponent(view, registration.Type, out var component))
         {
-            return (true, null, new HashSet<string>());
+            return (true, null);
         }
 
-        var (data, fields) = Written(doc, view, registration, component);
-        return (true, data, fields);
-    }
-
-    /// <summary>A component's data where it differs from the prototype's, and the fields its kind has.</summary>
-    private (MappingDataNode Data, IReadOnlySet<string> Fields) Written(ViewDocument doc, EntityUid view, ComponentRegistration registration, IComponent component)
-    {
-        var context = new DocumentUids(_serialization, doc);
-        var own = _serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: true, context: context);
-        var fields = own.Keys.ToHashSet();
-        var prototype = _entMan.GetComponent<MetaDataComponent>(view).EntityPrototype;
-        if (prototype == null || !prototype.Components.TryGetValue(registration.Name, out var entry))
-            return (_serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: false, context: context), fields);
-
-        var fromPrototype = _serialization.WriteValueAs<MappingDataNode>(registration.Type, entry.Component, alwaysWrite: true, context: context);
-        return (own.Except(fromPrototype) ?? new MappingDataNode(), fields);
+        return (true, _serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: true, context: new DocumentUids(_serialization, doc)));
     }
 
     /// <summary>For the checks: compare what each saved component reads as before its entity starts.</summary>
@@ -281,22 +266,26 @@ public sealed partial class ViewWorld
 
     private void CompareRead(ViewDocument doc, EntityUid uid, ComponentRegistration registration, IComponent component, SavedComponent saved, int docUid)
     {
-        var (data, fields) = Written(doc, uid, registration, component);
+        // Each field as the component holds it, whole: the client's kind of a component may
+        // start a field from another value than the server's kind, so a field can be as sent
+        // and still be no different from the client's prototype.
+        var context = new DocumentUids(_serialization, doc);
+        var whole = _serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: true, context: context);
         foreach (var (key, value) in saved.Data)
         {
             var name = $"{saved.Name}.{key}";
-            if (!fields.Contains(key))
+            if (!whole.TryGet(key, out var read))
             {
                 ServerFields.Add(name);
                 continue;
             }
 
             ReadFields++;
-            if (data.TryGet(key, out var read) && read.Equals(value))
+            if (read.Equals(value))
                 continue;
 
             var (count, example) = ReadWrong.GetValueOrDefault(name, (0, ""));
-            ReadWrong[name] = (count + 1, count == 0 ? $"{docUid}: sent {value}, read {(data.TryGet(key, out var r) ? r : "nothing")}" : example);
+            ReadWrong[name] = (count + 1, count == 0 ? $"{docUid}: sent {value}, read {read}" : example);
         }
     }
 

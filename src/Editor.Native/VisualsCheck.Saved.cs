@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Mapping;
 using SS14.EditorKernel;
@@ -59,6 +60,7 @@ public static partial class VisualsCheck
                 foreach (var (uid, item) in under.Items)
                     list.Items[uid] = item;
                 StatesDrawn(session, scene, list, say, tally);
+                DecalsDrawn(session, scene, yaml, list, say, tally);
                 ValveClosed(session, scene, list, say, tally);
             }
             finally
@@ -89,7 +91,7 @@ public static partial class VisualsCheck
                 compared.Entities++;
                 foreach (var component in saved.Components)
                 {
-                    var (known, data, clientFields) = world.SavedOf(doc, saved.Uid, component.Name);
+                    var (known, data) = world.SavedOf(doc, saved.Uid, component.Name);
                     if (!known)
                     {
                         compared.ServerOnly++;
@@ -99,7 +101,7 @@ public static partial class VisualsCheck
                     compared.Components++;
                     foreach (var (key, value) in component.Data)
                     {
-                        if (data != null && clientFields.Contains(key) && !(data.TryGet(key, out var held) && held.Equals(value)))
+                        if (data != null && data.TryGet(key, out var held) && !held.Equals(value))
                             changed[$"{component.Name}.{key}"] = changed.GetValueOrDefault($"{component.Name}.{key}") + 1;
                     }
                 }
@@ -216,6 +218,44 @@ public static partial class VisualsCheck
         Case("filter that is off", entity => entity.Prototype.StartsWith("GasFilter", StringComparison.Ordinal) && FilterOn(entity) == false,
             states => states.Any(state => state.StartsWith("gasFilter", StringComparison.Ordinal))
                       && !states.Any(state => state.StartsWith("gasFilter", StringComparison.Ordinal) && state.EndsWith("On", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// Every decal of the map is sent and drawn: those a grid keeps on chunk entities, as Space
+    /// Wizards' maps do, are counted in the file, and each sent decal of a prototype the game has
+    /// is drawn with one rectangle.
+    /// </summary>
+    private static void DecalsDrawn(EngineSession session, Scene scene, string yaml, DrawList list, Action<string> say, Tally tally)
+    {
+        var sent = scene.Grids.Sum(grid => grid.Decals.Count);
+        // In the file a chunk's decals are listed by id under each kind, as "            12: 30,-34".
+        var onChunks = 0;
+        var inChunk = false;
+        foreach (var line in yaml.Split('\n'))
+        {
+            if (line.StartsWith("    - type: ", StringComparison.Ordinal) || !line.StartsWith("      ", StringComparison.Ordinal))
+                inChunk = line.TrimEnd() == "    - type: DecalChunk";
+            else if (inChunk && Regex.IsMatch(line, @"^            \d+: "))
+                onChunks++;
+        }
+
+        if (onChunks > 0)
+        {
+            var chunked = scene.Grids.Sum(grid => grid.Decals.Count(decal => decal.Id >= 65536));
+            tally.Expect(chunked == onChunks, $"every one of {onChunks} decals the file keeps on chunk entities is sent: {chunked}");
+        }
+
+        if (sent == 0)
+        {
+            CheckSkips.Skip(say, "decals drawn: the map has none");
+            return;
+        }
+
+        using var known = Ask(session, "decals", "{}");
+        var prototypes = known.RootElement.EnumerateArray().Select(decal => decal.GetProperty("id").GetString()).ToHashSet();
+        var drawable = scene.Grids.Sum(grid => grid.Decals.Count(decal => prototypes.Contains(decal.Prototype)));
+        var drawn = list.Items.Values.Where(item => item.Kind == 2).Sum(item => item.Quads.Count);
+        tally.Expect(drawn == drawable, $"each of {drawable} decals of a prototype the game has is drawn, of {sent} sent: {drawn} drawn");
     }
 
     /// <summary>A valve closed through its component data is drawn closed, and undo opens it again.</summary>
