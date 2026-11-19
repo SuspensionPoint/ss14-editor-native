@@ -14,6 +14,8 @@ struct Layer {
     colour: vec4<f32>,
     // 0 repeated, 1 shown once, 2 a flat colour.
     mode: u32,
+    // 1 for the picture's own pixels only, 0 for the smaller copies too.
+    sharp: u32,
 };
 
 @group(0) @binding(0) var<uniform> layer: Layer;
@@ -41,7 +43,9 @@ fn fragment(in: Varying) -> @location(0) vec4<f32> {
     let world = layer.centre + in.across * layer.half;
     let at = (world - layer.origin) / layer.size;
     // The picture's first row is its top; the world's y goes up.
-    let texel = textureSample(picture, picture_sampler, vec2<f32>(at.x, 1.0 - at.y));
+    let uv = vec2<f32>(at.x, 1.0 - at.y);
+    // At level 0 the GPU takes the nearest pixel whatever the size, as the game does.
+    let texel = select(textureSample(picture, picture_sampler, uv), textureSampleLevel(picture, picture_sampler, uv, 0.0), layer.sharp == 1u);
     if layer.mode == 2u {
         return layer.colour;
     }

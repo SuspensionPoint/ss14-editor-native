@@ -130,7 +130,10 @@ struct LayerUniform {
     colour: [f32; 4],
     /// 0 repeated, 1 shown once, 2 a flat colour.
     mode: u32,
-    _padding: [u32; 3],
+    /// 1 to take the picture's own pixels, nearest, as the game does. 0 to let the GPU take
+    /// the smaller copies.
+    sharp: u32,
+    _padding: [u32; 2],
 }
 
 #[repr(C)]
@@ -518,8 +521,12 @@ impl MapRenderer {
             ],
         });
         let backdrop_pipeline = Self::covering(device, srgb, "backdrop", include_str!("backdrop.wgsl"), &backdrop_layout);
-        // The game's own pixels when zoomed in; smoothed, from the smaller copies, when the
-        // view takes in more of a picture than it has pixels for.
+        // The game samples its textures nearest, with no smaller copies (TextureSampleParameters
+        // .Default has no filter, Clyde.Textures.cs sets GL_NEAREST). While the view is within
+        // the game's zoom the shader asks for the picture's own pixels (`sharp`), which the GPU
+        // samples with the magnifying filter, nearest, however small they are drawn. Zoomed out
+        // further than the game goes, it takes the smaller copies, smoothed, so that a picture
+        // shrunk far does not shimmer.
         let backdrop_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("backdrop"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -551,7 +558,8 @@ impl MapRenderer {
                     size: [1.0; 2],
                     colour: [0.0, 0.0, 0.0, 1.0],
                     mode: 2,
-                    _padding: [0; 3],
+                    sharp: 1,
+                    _padding: [0; 2],
                 }),
                 usage: wgpu::BufferUsages::UNIFORM,
             },
@@ -685,7 +693,9 @@ impl MapRenderer {
                     size: size.into(),
                     colour: [1.0; 4],
                     mode: if layer.placing.tiled { 0 } else { 1 },
-                    _padding: [0; 3],
+                    // As above, 100% is as far out as the game shows a map.
+                    sharp: (camera.zoom >= 1.0) as u32,
+                    _padding: [0; 2],
                 };
                 queue.write_buffer(&layer.uniform, 0, bytemuck::bytes_of(&uniform));
             }
