@@ -30,6 +30,8 @@ pub struct Settings {
     /// How each fork's walls are placed, by its folder: the tile laid under them, the Room
     /// tool's wall and its Intersection switch.
     pub placing: Vec<ForkPlacing>,
+    /// Whether animated sprites move (View > Animate sprites). Off until a mapper turns it on.
+    pub animate_sprites: bool,
 }
 
 /// How one fork's walls are placed. A fork with no entry places them as `ForkPlacing::default`.

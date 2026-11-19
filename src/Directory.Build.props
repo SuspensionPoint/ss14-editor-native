@@ -73,8 +73,9 @@
     (Editor.Kernel/DeviceLinks.cs) overrides that set, else the older one.
 
     FORK_DECAL_CHUNK_ENTITIES: the Space Wizards' decals on chunk entities of the grid
-    (DecalChunkComponent), not in the grid's DecalGridComponent. The editor shows none and
-    refuses an edit of one. The chunk entities are loaded and saved as they are.
+    (DecalChunkComponent), not in the grid's DecalGridComponent. The editor shows them, read
+    from the chunk entities, and refuses an edit of one. The chunk entities are loaded and saved
+    as they are.
 
     FORK_SEALED_DEVICE_LINK_SYSTEM: the Space Wizards' device network refactor, one sealed
     DeviceLinkSystem in Content.Shared.DeviceLinking.Systems with the components in

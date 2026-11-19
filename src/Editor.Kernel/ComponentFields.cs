@@ -54,7 +54,7 @@ internal sealed partial class ComponentEditor
     /// </summary>
     public FieldsAnswer Fields(EntityUid uid, IReadOnlyList<string>? names, IReadOnlySet<string> known)
     {
-        var cache = PrototypeNodes(_entMan.GetComponent<MetaDataComponent>(uid).EntityPrototype);
+        var prototype = _entMan.GetComponent<MetaDataComponent>(uid).EntityPrototype;
         var registrations = new List<ComponentRegistration>();
         if (names == null)
         {
@@ -80,7 +80,7 @@ internal sealed partial class ComponentEditor
         var ids = new Dictionary<string, IReadOnlyList<string>>();
         foreach (var registration in registrations)
         {
-            var before = cache != null && cache.TryGetValue(registration.Name, out var fromPrototype) ? fromPrototype : Blank(registration);
+            var before = PrototypeNode(prototype, registration.Name, out var fromPrototype) ? fromPrototype : Blank(registration);
             var now = _entMan.TryGetComponent(uid, registration.Type, out var component)
                 ? _serialization.WriteValueAs<MappingDataNode>(registration.Type, component, alwaysWrite: true, context: _context)
                 : before;

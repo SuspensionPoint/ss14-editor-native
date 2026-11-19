@@ -449,10 +449,7 @@ public sealed partial class ViewWorld
         if (!_entMan.TryGetComponent(gridUid, out DecalGridComponent? decalGrid))
             return;
 
-        var decals = new List<(uint Id, Decal Decal)>();
-        foreach (var chunk in decalGrid.ChunkCollection.ChunkCollection.Values)
-        foreach (var (id, decal) in chunk.Decals)
-            decals.Add((id, decal));
+        var decals = DecalsOf(decalGrid).ToList();
 
         decals.Sort((a, b) =>
         {

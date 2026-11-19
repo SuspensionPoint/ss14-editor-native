@@ -69,6 +69,10 @@ fn menus(editor: &Editor) -> Vec<(&'static str, Vec<Option<Item>>)> {
         switch("Show entities", session.layers.entities, |editor| editor.session.layers.entities ^= true),
         switch("Grid lines", session.show_grid, |editor| editor.session.show_grid ^= true),
         switch("Space backdrop", session.show_backdrop, |editor| editor.session.show_backdrop ^= true),
+        switch("Animate sprites", session.animate_sprites(), |editor| {
+            let on = !editor.session.animate_sprites();
+            editor.session.set_animate_sprites(on);
+        }),
         None,
         switch("Performance", editor.show_performance, |editor| editor.show_performance ^= true),
     ];

@@ -85,6 +85,7 @@
     <Compile Include="..\Editor.ViewKernel\ViewPack.cs" Link="View\ViewPack.cs" />
     <Compile Include="..\Content.EditorView\DrawRecorder.cs" Link="View\DrawRecorder.cs" />
     <Compile Include="..\Content.EditorView\ViewWorld.cs" Link="View\ViewWorld.cs" />
+    <Compile Include="..\Content.EditorView\ViewWorld.Saved.cs" Link="View\ViewWorld.Saved.cs" />
     <Compile Include="..\Content.EditorView\ViewWorld.DrawList.cs" Link="View\ViewWorld.DrawList.cs" />
     <Compile Include="..\Content.EditorView\SubFloorView.cs" Link="View\SubFloorView.cs" />
   </ItemGroup>

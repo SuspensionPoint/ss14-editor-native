@@ -72,6 +72,15 @@ public sealed partial class ViewWorld
 
         /// <summary>The looks the kernel sent last, by document uid, for a view entity made again.</summary>
         public readonly Dictionary<int, SceneVisuals> Visuals = new();
+
+        /// <summary>The saved data the kernel sent last, by document uid, that the entity is made with (ViewWorld.Saved.cs).</summary>
+        public readonly Dictionary<int, IReadOnlyList<SavedComponent>> Saved = new();
+
+        /// <summary>Where each shown entity was last placed, to make it again when its saved data changes.</summary>
+        public readonly Dictionary<int, SceneEntity> Placed = new();
+
+        /// <summary>Shown entities whose saved data named one the view had not made yet.</summary>
+        public readonly HashSet<int> Unresolved = new();
     }
 
     // ---- layer visibility ----
@@ -150,6 +159,9 @@ public sealed partial class ViewWorld
         foreach (var grid in scene.Grids)
             UpsertGrid(doc, grid);
 
+        foreach (var saved in scene.Saved)
+            doc.Saved[saved.Uid] = saved.Components;
+
         var failed = 0;
         foreach (var entity in scene.Entities)
         {
@@ -159,6 +171,8 @@ public sealed partial class ViewWorld
 
         if (failed > 0)
             _log.Warning($"{failed} of {scene.Entities.Count} entities could not be shown.");
+
+        ResolveSaved(doc);
 
         ApplyVisuals(doc, scene.Visuals);
     }
@@ -215,10 +229,23 @@ public sealed partial class ViewWorld
                 _hiddenByLayer.Remove(uid);
                 _entMan.DeleteEntity(uid);
             }
+
+            doc.Saved.Remove(removed);
+            doc.Placed.Remove(removed);
         }
 
+        // An entity whose saved data changed is made again with it, where the delta puts it
+        // or where it stood.
+        var again = TakeSaved(doc, delta.Saved);
         foreach (var entity in delta.Entities)
             Upsert(doc, entity);
+        foreach (var uid in again)
+        {
+            if (!doc.Entities.ContainsKey(uid) && doc.Placed.TryGetValue(uid, out var placed))
+                Upsert(doc, placed);
+        }
+
+        ResolveSaved(doc);
 
         // An older kernel's delta, read from text, has none.
         ApplyVisuals(doc, delta.Visuals ?? []);
@@ -272,6 +299,8 @@ public sealed partial class ViewWorld
 
         if (record.PipeColor is { } color)
             system.SetData(uid, PipeColorVisuals.Color, Color.FromHex(color), appearance);
+        if (record.Appearance is { } values)
+            SetAppearance(uid, appearance, values);
     }
 
     public void Close(int document)
@@ -350,27 +379,55 @@ public sealed partial class ViewWorld
 
         // The client draws decals straight from this component, so filling it is all it takes.
         var decals = _entMan.EnsureComponent<DecalGridComponent>(uid);
-        decals.ChunkCollection.ChunkCollection.Clear();
-        decals.DecalIndex.Clear();
+        ClearDecals(decals);
         foreach (var decal in scene.Decals)
             PutDecal(decals, decal);
     }
 
-#if FORK_DECAL_CHUNK_ENTITIES
-    // A fork that keeps its decals on chunk entities gives none from the kernel
-    // (Editor.Kernel/Documents.cs), so there are none to put here.
-    private static void PutDecal(DecalGridComponent comp, SceneDecal scene)
-    {
-    }
-
-    private static void RemoveDecal(DecalGridComponent comp, uint id)
-    {
-    }
-#else
-    private static void PutDecal(DecalGridComponent comp, SceneDecal scene)
+    private static Decal ToDecal(SceneDecal scene)
     {
         Color? color = scene.Color == null ? null : Color.FromHex(scene.Color);
-        var decal = new Decal(new Vector2(scene.X, scene.Y), scene.Prototype, color, new Angle(scene.Angle), scene.ZIndex, scene.Cleanable);
+        return new Decal(new Vector2(scene.X, scene.Y), scene.Prototype, color, new Angle(scene.Angle), scene.ZIndex, scene.Cleanable);
+    }
+
+#if FORK_DECAL_CHUNK_ENTITIES
+    // A fork that keeps its decals on chunk entities numbers them in a way the grid's own decal
+    // component cannot hold (Editor.Kernel/Documents.cs ChunkDecals). They are kept here by
+    // grid, and drawn from here as the game's DecalOverlay draws them (RecordDecals).
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DecalGridComponent, SortedDictionary<int, Decal>> _chunkDecals = new();
+
+    private SortedDictionary<int, Decal> ChunkDecalsOf(DecalGridComponent comp) => _chunkDecals.GetOrCreateValue(comp);
+
+    private void ClearDecals(DecalGridComponent comp)
+    {
+        _chunkDecals.Remove(comp);
+    }
+
+    private void PutDecal(DecalGridComponent comp, SceneDecal scene) => ChunkDecalsOf(comp)[scene.Id] = ToDecal(scene);
+
+    private void RemoveDecal(DecalGridComponent comp, uint id) => ChunkDecalsOf(comp).Remove((int) id);
+
+    /// <summary>A grid's decals with their numbers, in no order.</summary>
+    private IEnumerable<(long Id, Decal Decal)> DecalsOf(DecalGridComponent comp) =>
+        _chunkDecals.TryGetValue(comp, out var decals) ? decals.Select(pair => ((long) pair.Key, pair.Value)) : [];
+#else
+    private static void ClearDecals(DecalGridComponent comp)
+    {
+        comp.ChunkCollection.ChunkCollection.Clear();
+        comp.DecalIndex.Clear();
+    }
+
+    /// <summary>A grid's decals with their numbers, in no order.</summary>
+    private static IEnumerable<(long Id, Decal Decal)> DecalsOf(DecalGridComponent comp)
+    {
+        foreach (var chunk in comp.ChunkCollection.ChunkCollection.Values)
+        foreach (var (id, decal) in chunk.Decals)
+            yield return (id, decal);
+    }
+
+    private static void PutDecal(DecalGridComponent comp, SceneDecal scene)
+    {
+        var decal = ToDecal(scene);
         var indices = SharedDecalSystem.GetChunkIndices(decal.Coordinates);
         var chunks = comp.ChunkCollection.ChunkCollection;
         if (!chunks.TryGetValue(indices, out var chunk))
@@ -409,6 +466,7 @@ public sealed partial class ViewWorld
                 doc.Gone.Add(scene.Uid);
                 _entMan.DeleteEntity(uid);
                 doc.Entities.Remove(scene.Uid);
+                doc.Placed.Remove(scene.Uid);
             }
 
             return true;
@@ -424,7 +482,7 @@ public sealed partial class ViewWorld
                 if (!_protos.HasIndex<EntityPrototype>(scene.Prototype))
                     return false;
 
-                uid = _entMan.SpawnAttachedTo(scene.Prototype, coordinates, rotation: rotation);
+                uid = Spawn(doc, scene, coordinates, rotation);
                 doc.Entities[scene.Uid] = uid;
                 doc.DocUids[uid] = scene.Uid;
                 doc.Gone.Remove(scene.Uid);
@@ -453,6 +511,7 @@ public sealed partial class ViewWorld
                 SetVisuals(uid, visuals);
 
             doc.Dirty.Add(scene.Uid);
+            doc.Placed[scene.Uid] = scene;
             MarkAround(doc, uid);
 
             return true;

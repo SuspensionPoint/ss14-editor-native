@@ -85,7 +85,7 @@ dotnet src/Editor.Native/bin/r2r/Editor.Native.dll pack upstream/starlight nativ
 dotnet src/Editor.Native/bin/r2r/Editor.Native.dll quick
 ```
 
-`quick` runs nine checks on two small Starlight shuttles in about a minute. Each one opens a
+`quick` runs ten checks on two small Starlight shuttles in about a minute. Each one opens a
 map, edits it through the kernel, saves it and reads the save back. A line starting with `skip`
 means the maps have nothing for that step. It isn't a failure. The
 [architecture page](docs/architecture.md#checks) has a table of which check covers which part

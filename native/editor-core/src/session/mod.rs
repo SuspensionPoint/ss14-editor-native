@@ -31,6 +31,7 @@ use crate::textures::BakedTextures;
 
 mod air;
 mod air_fix;
+mod animate;
 mod backdrops;
 mod engine_thread;
 mod entity;
@@ -311,6 +312,8 @@ pub struct Session {
     air_drawn: air::AirDrawn,
     /// The Problems overlay: its switch and its badges.
     problems: problems::Problems,
+    /// Whether animated sprites move (View > Animate sprites).
+    animate: animate::Animate,
     /// The open map's backdrop, once it has been read; a map the game gives none has no layers.
     pub backdrop: Option<BackdropInfo>,
     /// A backdrop that has arrived and has not been handed to whoever draws yet.
@@ -443,6 +446,7 @@ impl Session {
         session.locale = Locale::read(&fork, wake.clone());
         session.favourites = favourites::Favourites::load(crate::forks::settings::Settings::file(), &fork);
         session.problems = problems::Problems::load(crate::forks::settings::Settings::file(), &fork);
+        session.animate = animate::Animate::load(crate::forks::settings::Settings::file());
         session.flooring = Flooring::load(crate::forks::settings::Settings::file(), &fork);
         std::thread::Builder::new()
             .name("engine".into())
@@ -507,6 +511,7 @@ impl Session {
             air_view: AirView::default(),
             air_drawn: air::AirDrawn::default(),
             problems: problems::Problems::default(),
+            animate: animate::Animate::default(),
             backdrop: None,
             backdrop_arrived: None,
             gallery: backdrops::Gallery::default(),

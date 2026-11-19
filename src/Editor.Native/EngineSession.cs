@@ -92,6 +92,9 @@ public sealed class EngineSession
     /// <summary>Runs a check on the document kernel's thread, with the kernel in hand.</summary>
     internal R OnDocumentKernel<R>(Func<DocumentKernel, R> work) => _documents.Run(work);
 
+    /// <summary>Runs a check on the view kernel's thread, with the view in hand.</summary>
+    internal R OnViewKernel<R>(Func<ViewKernel, R> work) => _view.Run(work);
+
     /// <summary>Completes when both kernels are up.</summary>
     public Task Ready { get; }
 

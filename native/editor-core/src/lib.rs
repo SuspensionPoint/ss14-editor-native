@@ -3,6 +3,7 @@
 //! Nearly all the logic lives here, and its tests run without an engine.
 
 pub mod air;
+pub mod animation;
 pub mod air_checks;
 pub mod air_draw;
 pub mod backdrop;

@@ -646,6 +646,7 @@ impl Widget for MapWidget {
         let seconds = self.painted.replace(now).map_or(0.0, |then| (now - then).as_secs_f32());
 
         let (changed, zoomed, moved) = with(|editor| {
+            let mut animated = false;
             let resized = editor.view != view;
             (editor.view, editor.scale) = (view, scale as f32);
             let changed = editor.session.pump(view) || resized;
@@ -679,6 +680,13 @@ impl Widget for MapWidget {
                 session.map_drawn();
                 gpu.renderer.set_view(&gpu.queue, session.camera, width, height, session.layers.hidden_mask());
                 let seconds = session.started.elapsed().as_secs_f64();
+                // Animated sprites move by the session's clock, and the map is drawn again only
+                // while one is in view.
+                gpu.renderer.set_animated(&gpu.queue, session.animate_sprites());
+                let (left, top) = session.camera.world_at((0.0, 0.0), view);
+                let (right, bottom) = session.camera.world_at((width as f32, height as f32), view);
+                let in_view = (left.min(right), top.min(bottom), left.max(right), top.max(bottom));
+                animated = gpu.renderer.animate(&gpu.queue, &session.lists, &editor.textures, seconds as f32, in_view);
                 let surround = Surround { backdrop: session.show_backdrop, seconds, grid: session.show_grid.then(|| session.grid_lines()) };
                 gpu.renderer.set_surround(&gpu.queue, session.camera, width, height, surround);
                 // The web editor's selection border: gold, two sprite pixels wide, following
@@ -689,7 +697,7 @@ impl Widget for MapWidget {
             }
             // The backdrop shown may be the one under the mouse in the gallery.
             let drifting = session.show_backdrop && session.backdrop_moves();
-            let moving = !session.selection.is_empty() || drifting || session.highlight_live() || session.link_line().is_some() || !session.region_edges().is_empty();
+            let moving = !session.selection.is_empty() || drifting || animated || session.highlight_live() || session.link_line().is_some() || !session.region_edges().is_empty();
             ANIMATING.store(session.document.is_some() && moving, Ordering::Relaxed);
             (changed, zoomed, moved)
         });

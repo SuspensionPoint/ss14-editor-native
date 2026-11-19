@@ -478,7 +478,9 @@ public static partial class VisualsCheck
             foreach (var texture in header.RootElement.GetProperty("textures").EnumerateArray())
             {
                 var state = texture.GetProperty("state");
-                textures[texture.GetProperty("id").GetInt32()] = new TextureSourceInfo(texture.GetProperty("path").GetString()!, state.ValueKind == JsonValueKind.Null ? null : state.GetString());
+                int? next = texture.TryGetProperty("next", out var link) && link.ValueKind == JsonValueKind.Number ? link.GetInt32() : null;
+                var delay = texture.TryGetProperty("delay", out var time) && time.ValueKind == JsonValueKind.Number ? time.GetSingle() : 0;
+                textures[texture.GetProperty("id").GetInt32()] = new TextureSourceInfo(texture.GetProperty("path").GetString()!, state.ValueKind == JsonValueKind.Null ? null : state.GetString(), next, delay);
             }
 
             var items = new Dictionary<int, DrawItem>();
@@ -502,7 +504,7 @@ public static partial class VisualsCheck
         }
     }
 
-    private sealed record TextureSourceInfo(string Path, string? State);
+    private sealed record TextureSourceInfo(string Path, string? State, int? Next = null, float Delay = 0);
 
     private sealed record DrawItem(int Depth, int Order, float Sort, int Kind, int Tie, List<(int Texture, Color Color)> Quads);
 }
