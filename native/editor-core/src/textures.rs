@@ -1,12 +1,19 @@
 //! Baked textures: every image of a fork in one file, decoded once.
 //!
 //! Opening a station needs thousands of sprite images. Decoding PNGs every time a map opens gives
-//! the same result each time, so it happens once per fork build instead. Each image is decoded, its
-//! alpha premultiplied (the form the renderer blends), compressed with LZ4 and appended to one
-//! file, with an index at the end. At run time the file is memory-mapped, and loading an image
-//! costs one decompression at memory speed.
+//! the same result each time, so it happens once per fork build instead. Each image is decoded to
+//! 8-bit RGBA with straight alpha, compressed with LZ4 and appended to one file, with an index at
+//! the end. At run time the file is memory-mapped, and loading an image costs one decompression
+//! at memory speed.
 //!
-//! Layout: "SSTX1\0\0\0", the index's offset (u64), the compressed images, then the index. The
+//! The colour stays sRGB and the alpha stays out of it. The renderer samples the images as sRGB
+//! textures the way the game does, so the GPU decodes them to linear light before they are
+//! blended, and alpha multiplied into sRGB bytes would come out wrong once decoded. An RSI whose
+//! meta.json has `"load": { "srgb": false }` is one the game uploads without that decoding
+//! (RsiLoading.cs, TextureLoadParameters). Its colours are stored here already encoded, so that
+//! the decoding gives back the bytes of the file, as the game reads them.
+//!
+//! Layout: "SSTX2\0\0\0", the index's offset (u64), the compressed images, then the index. The
 //! index is a count (u32) and, per image, the path's length (u16), the path, the offset (u64), the
 //! compressed length (u32), width (u32) and height (u32). Little-endian throughout.
 
@@ -18,7 +25,9 @@ use std::path::{Path, PathBuf};
 use memmap2::Mmap;
 use rayon::prelude::*;
 
-const MAGIC: &[u8; 8] = b"SSTX1\0\0\0";
+const MAGIC: &[u8; 8] = b"SSTX2\0\0\0";
+/// The start of a file from before the images kept straight alpha.
+const OLD_MAGIC: &[u8; 5] = b"SSTX1";
 
 pub struct BakeReport {
     pub images: usize,
@@ -56,10 +65,23 @@ pub fn bake_with(fork_repo: &Path, engine_resources: &Path, output: &Path) -> st
 
     let mut names: Vec<&String> = files.keys().collect();
     names.sort();
+    let mut linear_folders: HashMap<PathBuf, bool> = HashMap::new();
+    for path in files.values() {
+        if let Some(folder) = path.parent() {
+            linear_folders.entry(folder.to_path_buf()).or_insert_with(|| loads_linear(folder));
+        }
+    }
     let baked: Vec<(&String, Option<(u32, u32, Vec<u8>)>)> = names
         .par_iter()
         .map(|name| {
-            let image = decode_premultiplied(&files[*name]).map(|(width, height, pixels)| (width, height, lz4_flex::compress(&pixels)));
+            let path = &files[*name];
+            let linear = path.parent().is_some_and(|folder| linear_folders[folder]);
+            let image = decode_straight(path).map(|(width, height, mut pixels)| {
+                if linear {
+                    encode_linear(&mut pixels);
+                }
+                (width, height, lz4_flex::compress(&pixels))
+            });
             (*name, image)
         })
         .collect();
@@ -96,13 +118,42 @@ pub fn bake_with(fork_repo: &Path, engine_resources: &Path, output: &Path) -> st
     Ok(report)
 }
 
-/// Decodes a PNG to 8-bit RGBA with the alpha multiplied into the colour.
-pub(crate) fn decode_premultiplied(path: &Path) -> Option<(u32, u32, Vec<u8>)> {
-    decode_premultiplied_from(std::io::BufReader::new(File::open(path).ok()?))
+/// Whether a folder is an RSI the game loads without decoding its sRGB: its meta.json has
+/// `"load": { "srgb": false }`, which RsiLoading.cs reads into the RSI's TextureLoadParameters.
+pub(crate) fn loads_linear(folder: &Path) -> bool {
+    if !folder.extension().is_some_and(|e| e.eq_ignore_ascii_case("rsi")) {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(folder.join("meta.json")) else { return false };
+    let Ok(meta) = serde_json::from_str::<serde_json::Value>(text.trim_start_matches('\u{feff}')) else { return false };
+    meta.get("load").and_then(|load| load.get("srgb")).and_then(|srgb| srgb.as_bool()) == Some(false)
 }
 
-/// Decodes a PNG already read, as [`decode_premultiplied`] does a file.
+/// Encodes the colour of straight RGBA pixels as sRGB, in place, so that an sRGB texture made
+/// of them decodes back to the bytes they had.
+pub(crate) fn encode_linear(pixels: &mut [u8]) {
+    for pixel in pixels.chunks_exact_mut(4) {
+        for channel in &mut pixel[..3] {
+            *channel = crate::colour::linear_to_byte(*channel as f32 / 255.0);
+        }
+    }
+}
+
+/// Decodes a PNG to 8-bit RGBA with straight alpha.
+pub(crate) fn decode_straight(path: &Path) -> Option<(u32, u32, Vec<u8>)> {
+    decode_straight_from(std::io::BufReader::new(File::open(path).ok()?))
+}
+
+/// Decodes a PNG already read, with the alpha multiplied into the colour: the form Blitz takes
+/// for a picture of the interface.
 pub fn decode_premultiplied_from(png: impl std::io::BufRead + std::io::Seek) -> Option<(u32, u32, Vec<u8>)> {
+    let (width, height, mut pixels) = decode_straight_from(png)?;
+    crate::colour::premultiply(&mut pixels);
+    Some((width, height, pixels))
+}
+
+/// Decodes a PNG already read, as [`decode_straight`] does a file.
+pub fn decode_straight_from(png: impl std::io::BufRead + std::io::Seek) -> Option<(u32, u32, Vec<u8>)> {
     let mut decoder = png::Decoder::new(png);
     decoder.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = decoder.read_info().ok()?;
@@ -118,14 +169,6 @@ pub fn decode_premultiplied_from(png: impl std::io::BufRead + std::io::Seek) -> 
         png::ColorType::Grayscale => data.iter().for_each(|&g| pixels.extend_from_slice(&[g, g, g, 255])),
         png::ColorType::Indexed => return None,
     }
-    for pixel in pixels.chunks_exact_mut(4) {
-        let alpha = pixel[3] as u32;
-        if alpha != 255 {
-            pixel[0] = ((pixel[0] as u32 * alpha + 127) / 255) as u8;
-            pixel[1] = ((pixel[1] as u32 * alpha + 127) / 255) as u8;
-            pixel[2] = ((pixel[2] as u32 * alpha + 127) / 255) as u8;
-        }
-    }
     Some((info.width, info.height, pixels))
 }
 
@@ -136,7 +179,7 @@ struct Entry {
     height: u32,
 }
 
-/// A whole image, as premultiplied RGBA.
+/// A whole image, as RGBA with straight alpha.
 pub struct Sheet {
     pub width: u32,
     pub height: u32,
@@ -176,6 +219,9 @@ impl BakedTextures {
     pub fn open(path: &Path) -> Result<BakedTextures, String> {
         let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let map = unsafe { Mmap::map(&file) }.map_err(|e| e.to_string())?;
+        if map.len() >= 5 && &map[0..5] == OLD_MAGIC {
+            return Err(format!("{} was baked by an older editor. Delete it and it will be baked again", path.display()));
+        }
         if map.len() < 16 || &map[0..8] != MAGIC {
             return Err(format!("{} isn't a baked texture file", path.display()));
         }
@@ -210,7 +256,9 @@ impl BakedTextures {
     /// A small picture of an image for a palette: its first frame, `size` pixels square, as
     /// premultiplied RGBA.
     pub fn thumbnail(&self, file: &str, size: u32) -> Option<Vec<u8>> {
-        self.sheet(file)?.frame(0, size, size)
+        let mut pixels = self.sheet(file)?.frame(0, size, size)?;
+        crate::colour::premultiply(&mut pixels);
+        Some(pixels)
     }
 
     /// The image at a rooted resource path such as "/Textures/Tiles/steel.png".
@@ -221,3 +269,7 @@ impl BakedTextures {
         Some(Sheet { width: entry.width, height: entry.height, pixels })
     }
 }
+
+#[cfg(test)]
+#[path = "tests/textures.rs"]
+mod tests;

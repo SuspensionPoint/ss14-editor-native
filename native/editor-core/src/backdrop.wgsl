@@ -1,5 +1,7 @@
 // One layer of the backdrop behind the map, drawn over the whole view: a picture placed in the
 // world (see backdrop.rs for where), repeated or shown once, or a flat colour under them all.
+// The picture is an sRGB texture with straight alpha and the target is sRGB, as in the game,
+// so the texel arrives in linear light and is blended in linear light.
 
 struct Layer {
     // The view in the world: its centre and half its size, in tiles.
@@ -46,5 +48,5 @@ fn fragment(in: Varying) -> @location(0) vec4<f32> {
     if layer.mode == 1u && (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) {
         discard;
     }
-    return texel * layer.colour;
+    return vec4<f32>(texel.rgb * texel.a, texel.a) * layer.colour;
 }

@@ -26,6 +26,9 @@ use crate::{bump, bump_map, redraw, wake, watch, watch_map, with};
 static ANIMATING: AtomicBool = AtomicBool::new(false);
 /// Whether the performance display is open. The timer refreshes it four times a second.
 pub(crate) static PERFORMANCE: AtomicBool = AtomicBool::new(false);
+/// The map's texture. Blitz takes its bytes as sRGB, so it is plain. The renderer draws the map
+/// through an sRGB view of it, which blends in linear light as the game does and stores sRGB.
+const MAP_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 thread_local! {
     /// Where the mouse last moved to over the map with no button down, until the session is
@@ -600,7 +603,7 @@ impl Widget for MapWidget {
             eprintln!("the interface is not drawn with wgpu, so there is no map");
             return;
         };
-        let renderer = MapRenderer::new(&handle.device, wgpu::TextureFormat::Rgba8Unorm);
+        let renderer = MapRenderer::new(&handle.device, MAP_FORMAT);
         self.gpu = Some(Gpu { device: handle.device.clone(), queue: handle.queue.clone(), renderer, shown: None, next: None });
     }
 
@@ -625,9 +628,9 @@ impl Widget for MapWidget {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: MAP_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
+                view_formats: &MapRenderer::view_formats(MAP_FORMAT),
             });
             let Ok(resource) = render_ctx.try_register_custom_resource(Box::new(texture.clone())) else { return scene };
             gpu.next = Some((texture, resource));
@@ -683,26 +686,25 @@ impl Widget for MapWidget {
             (changed, zoomed, moved)
         });
 
-        let target = texture.create_view(&Default::default());
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        {
-            let (red, green, blue) = colours::CANVAS;
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let (red, green, blue) = colours::CANVAS;
+        let canvas = wgpu::Color { r: red as f64 / 255.0, g: green as f64 / 255.0, b: blue as f64 / 255.0, a: 1.0 };
+        if with(|editor| editor.session.document.is_some()) {
+            gpu.renderer.draw(&mut encoder, &texture, canvas);
+        } else {
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("map"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target,
+                    view: &texture.create_view(&Default::default()),
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: red as f64 / 255.0, g: green as f64 / 255.0, b: blue as f64 / 255.0, a: 1.0 }), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(canvas), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if with(|editor| editor.session.document.is_some()) {
-                gpu.renderer.draw(&mut pass);
-            }
         }
         gpu.queue.submit([encoder.finish()]);
 
