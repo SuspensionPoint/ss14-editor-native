@@ -61,8 +61,8 @@ All of it is under `native/`. Build one package at a time.
 | `editor-core/src/session/tools/mod.rs` | 860 | Sends presses, drags and keys to the tools. Its module doc is the rule sheet for adding a tool. |
 | `editor-core/src/session/tools/tiles.rs` | 360 | Paint, Erase, Rectangle, Fill. |
 | `editor-core/src/session/tools/shapes.rs` | 190 | Line and Circle. |
-| `editor-core/src/session/tools/floors.rs` | 210 | Laying a tile under new walls. `needs_floor` is the one rule for what gets a tile: the Wall tag, or anchored by default with the Window tag, the CanBuildWindowOnTop component (grilles) or the Door component. The switch, the tile (Plating by default) and the Room tool's wall, kept per fork in the settings file (`Flooring`, `ForkPlacing`). Also the faint ghost of the tiles a press would lay. Tests in `tools/tests/floors.rs`. |
-| `editor-core/src/session/tools/room.rs` | 180 | The Room tool: a dragged rectangle that becomes one edit, with the tile in hand inside, the wall tile on the edge, and a wall on every edge cell that doesn't have it yet. Its ghost, size label and cancel. Tests in `tools/tests/room.rs`. |
+| `editor-core/src/session/tools/floors.rs` | 240 | Laying a tile under new walls. `needs_floor` is the one rule for what gets a tile: the Wall tag, or anchored by default with the Window tag, the CanBuildWindowOnTop component (grilles) or the Door component. The switch, the tile (Plating by default), the Room tool's wall and its Intersection switch, kept per fork in the settings file (`Flooring`, `ForkPlacing`). The Room tool's wall list order (`room_walls`): WallSolid, WallReinforced, the palette's Structures/Walls, the rest, then rock (`is_rock`, using Validate Map's `ALLOWED_WALLS`). Also the faint ghost of the tiles a press would lay. Tests in `tools/tests/floors.rs`. |
+| `editor-core/src/session/tools/room.rs` | 270 | The Room tool: a dragged rectangle that becomes one edit, with the tile in hand inside, the wall tile on the edge, and walls on the edge. `plan_room` decides each cell. With Intersection off, any cell holding a wall (`Prototype::is_wall`) is left alone, so walls never stack and no floor goes under one. With it on, the room joins those it overlaps: walls inside are deleted, edge cells already holding a wall stay, and edge cells on another room's floor stay open. Its ghost (red marks on walls to delete), size label and cancel. Tests in `tools/tests/room.rs`. |
 | `editor-core/src/session/tools/place.rs` | 320 | Placing entities. |
 | `editor-core/src/session/tools/select.rs` | 650 | Entity Select: find, move, turn and delete entities and decals. |
 | `editor-core/src/session/tools/area.rs` | 700 | Area Select: regions of cells. |
@@ -130,7 +130,7 @@ The files of `editor-dioxus/src/`:
   overlay's legend (sample tiles as pictures), its room labels and its hover box.
 - `bars.rs`: the menu, tool and status bars.
 - `placing.rs`: the Placement block under the entity palette (lay a tile under walls, and
-  which tile) and the Room tool's panel. A tile or a wall is chosen from a short list that
+  which tile) and the Room tool's panel with its Intersection switch. A tile or a wall is chosen from a short list that
   opens under its row, since Blitz has no drop-down lists.
 - `palettes.rs`: the side panel and the palettes. The Favourites tab comes first, each row has
   a star (`FavouriteStar`, shown on hover by `.fav-star` in `local.css`), and

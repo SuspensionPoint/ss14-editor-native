@@ -17,7 +17,8 @@ the editor loads the same way on a server.
   from the start screen. It builds whatever that fork's code needs, once.
 - **Tiles**: paint, erase, rectangle, fill, line and circle.
 - **Rooms**: drag out a room and get the floor inside, plating and walls round the edge, in
-  one step.
+  one step. Walls already there are never stacked. Turn on Intersection to join overlapping
+  rooms into one, for hallways and extensions.
 - **Entities**: place, select, move, turn, delete, and nudge with the arrow keys. Edit
   components in typed forms or as raw text, and put things into containers. Walls, windows,
   grilles and doors placed out in space get plating under them. You can switch this off or pick

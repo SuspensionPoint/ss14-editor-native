@@ -149,13 +149,13 @@ pub(crate) fn WallPlacement() -> Element {
 }
 
 /// The Room tool's panel: the floor it lays inside (the tile in hand), the tile on its edge,
-/// and the wall it builds with, with a list to choose another.
+/// the wall it builds with, with a list to choose another, and its Intersection switch.
 #[component]
 pub(crate) fn RoomPanel() -> Element {
     let _ = watch();
     let mut choosing = use_signal(|| false);
     let mut search = use_signal(String::new);
-    let (floor, wall, walls) = with(|editor| {
+    let (floor, wall, walls, joining) = with(|editor| {
         let floor = editor.session.chosen_tile().map(str::to_owned).map(|id| {
             let picture = tile_picture(editor, &id);
             (id, picture)
@@ -172,7 +172,7 @@ pub(crate) fn RoomPanel() -> Element {
         } else {
             Vec::new()
         };
-        (floor, wall, walls)
+        (floor, wall, walls, editor.session.room_intersection())
     });
     rsx! {
         div { class: "px-2 py-2 space-y-1.5",
@@ -215,6 +215,19 @@ pub(crate) fn RoomPanel() -> Element {
                         }
                     }
                 }
+            }
+            div {
+                label { class: "flex items-center gap-1 text-[11px] text-primary cursor-pointer",
+                    input { r#type: "checkbox", class: "check", checked: joining,
+                        oninput: move |event| {
+                            let on = event.checked();
+                            with(|editor| editor.session.set_room_intersection(on));
+                            bump();
+                        }
+                    }
+                    "Intersection"
+                }
+                div { class: "text-[10px] text-muted pl-4", "Joins rooms it overlaps into one. Good for hallways and extensions." }
             }
             div { class: "text-[10px] text-muted", "Drag out a room. Doors are up to you. Right-click or Escape cancels." }
         }

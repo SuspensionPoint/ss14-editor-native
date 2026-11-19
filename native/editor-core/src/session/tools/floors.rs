@@ -10,12 +10,23 @@
 use super::tiles::SHAPE_LIMIT;
 use super::*;
 use crate::forks::settings::{ForkPlacing, Settings};
+use crate::validate::ALLOWED_WALLS;
 
 /// How faint the ghost of a tile a press would lay is.
 const FLOOR_GHOST: f32 = 0.45;
 
 /// The wall the Room tool builds with until one is chosen, where the fork has it.
 const FIRST_WALL: &str = "WallSolid";
+
+/// The walls the Room tool's list starts with, in this order.
+const FIRST_WALLS: &[&str] = &[FIRST_WALL, "WallReinforced"];
+
+/// Whether a wall is rock: an asteroid or mineral rock, or another of the walls Validate Map
+/// lets stand on any tile (`ALLOWED_WALLS`). The Room tool's list puts them last.
+fn is_rock(id: &str) -> bool {
+    let rock_word = id.match_indices("Rock").any(|(at, _)| !id[at + 4..].starts_with(|next: char| next.is_ascii_lowercase()));
+    ALLOWED_WALLS.contains(&id) || id.starts_with("AsteroidRock") || rock_word
+}
 
 /// Whether an entity of this prototype needs a floor under it, so that a brush lays a tile on
 /// a cell with no tile before it puts one there. These do:
@@ -127,16 +138,47 @@ impl Session {
         }
     }
 
+    /// Whether the Room tool joins a new room to the rooms it overlaps (its Intersection
+    /// switch), or keeps them separate.
+    pub fn room_intersection(&self) -> bool {
+        self.flooring.placing.room_intersection
+    }
+
+    /// Switches the Room tool's Intersection on or off, and keeps that for the fork.
+    pub fn set_room_intersection(&mut self, on: bool) {
+        if self.flooring.placing.room_intersection != on {
+            self.flooring.placing.room_intersection = on;
+            self.save_flooring();
+        }
+    }
+
     /// The walls the Room tool can build with whose id or name has every one of the words in
-    /// it, in either case, as indices into [`Self::prototypes`]. No words is all of them.
+    /// it, in either case, as indices into [`Self::prototypes`]. No words is all of them. The
+    /// walls rooms are built from come first: WallSolid, WallReinforced, then the other walls
+    /// of the palette's Structures/Walls, then the rest, with the rocks last, each part by name.
     pub fn room_walls(&self, words: &[&str]) -> Vec<usize> {
         let words: Vec<String> = words.iter().map(|word| word.to_lowercase()).collect();
-        self.prototypes
+        let mut found: Vec<usize> = self
+            .prototypes
             .iter()
             .enumerate()
             .filter(|(_, prototype)| is_room_wall(prototype) && words.iter().all(|word| prototype.search.contains(word.as_str()) || prototype.id.to_lowercase().contains(word.as_str())))
             .map(|(index, _)| index)
-            .collect()
+            .collect();
+        let rank = |prototype: &Prototype| {
+            let station = self.palette_category(&prototype.id).is_some_and(|category| category.starts_with("Structures/Walls"));
+            match FIRST_WALLS.iter().position(|first| *first == prototype.id) {
+                Some(at) => at,
+                None if is_rock(&prototype.id) => FIRST_WALLS.len() + 2,
+                None if station => FIRST_WALLS.len(),
+                None => FIRST_WALLS.len() + 1,
+            }
+        };
+        found.sort_by_cached_key(|&index| {
+            let prototype = &self.prototypes[index];
+            (rank(prototype), shown_name(prototype).to_lowercase(), prototype.id.clone())
+        });
+        found
     }
 
     /// Puts a tile's picture on cells of a grid, faint, as rectangles for the renderer. A tile

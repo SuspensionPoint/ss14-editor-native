@@ -25,8 +25,8 @@ pub struct Settings {
     /// The favourites of each fork, by its folder. A fork given on the command line that is not
     /// in `forks` keeps its own here too.
     pub favourites: Vec<ForkFavourites>,
-    /// How each fork's walls are placed, by its folder: the tile laid under them and the
-    /// Room tool's wall.
+    /// How each fork's walls are placed, by its folder: the tile laid under them, the Room
+    /// tool's wall and its Intersection switch.
     pub placing: Vec<ForkPlacing>,
 }
 
@@ -42,6 +42,9 @@ pub struct ForkPlacing {
     pub floor_tile: String,
     /// The wall prototype the Room tool puts on a room's edge, if one was chosen.
     pub room_wall: Option<String>,
+    /// Whether the Room tool joins a new room to the rooms it overlaps (its Intersection
+    /// switch), in the place of keeping them separate.
+    pub room_intersection: bool,
 }
 
 /// The tile laid under walls until a mapper picks another.
@@ -49,7 +52,7 @@ pub const PLATING: &str = "Plating";
 
 impl Default for ForkPlacing {
     fn default() -> Self {
-        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None }
+        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None, room_intersection: false }
     }
 }
 
