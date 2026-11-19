@@ -229,7 +229,6 @@ pub(crate) fn RoomPanel() -> Element {
                 }
                 div { class: "text-[10px] text-muted pl-4", "Joins rooms it overlaps into one. Good for hallways and extensions." }
             }
-            div { class: "text-[10px] text-muted", "Drag out a room. Doors are up to you. Right-click or Escape cancels." }
         }
     }
 }
