@@ -62,8 +62,7 @@ impl Cycles {
         let mut frames = vec![id];
         let mut delays = Vec::new();
         let mut at = id;
-        loop {
-            let Some(source) = textures.get(&at) else { break };
+        while let Some(source) = textures.get(&at) {
             let Some(next) = source.next else { break };
             delays.push(source.delay.max(0.0));
             if next == id {
