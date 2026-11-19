@@ -17,7 +17,9 @@ the editor loads the same way on a server.
   from the start screen. It builds whatever that fork's code needs, once.
 - **Tools like an art program's**: pick a tool, then what it works on and in what shape. Paint
   and Erase work on tiles, entities or decals, at a point or in a line, rectangle or circle.
-  Fill floods an area of one tile.
+  Erase takes everything you can see, so hide a layer to keep what's on it, or turn on Only
+  to erase just what's in hand. Fill floods an area of one tile with a tile, an entity or a
+  decal.
 - **Rooms**: drag out a room and get the floor inside, plating and walls round the edge, in
   one step. Walls already there are never stacked. Turn on Join overlapping rooms for
   hallways and extensions.
