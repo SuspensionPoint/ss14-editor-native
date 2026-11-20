@@ -164,3 +164,29 @@ fn the_engine_s_answer_reads_as_names_and_numbers() {
     let read: Vec<DrawDepth> = serde_json::from_str(r#"[{"name":"Walls","value":-8},{"name":"WallTops","value":-1}]"#).unwrap();
     assert_eq!(read, depths(&[("Walls", -8), ("WallTops", -1)]));
 }
+
+#[test]
+fn a_name_the_rule_does_not_know_between_two_of_one_layer_takes_theirs() {
+    let groups = DepthGroups::from_depths(&depths(&[
+        ("BelowFloor", -20),
+        ("FloorTiles", -19),
+        ("FloorDecor", -17),
+        ("FloorObjects", -16),
+        ("Walls", -8),
+        ("WallTrims", -6),
+        ("WallTops", -1),
+        ("Objects", 0),
+        ("Doors", 8),
+        ("Windoors", 9),
+        ("Overdoors", 10),
+        ("Gasses", 11),
+    ]));
+    assert_eq!(groups.group(-17), group::FLOOR_OBJECTS);
+    assert_eq!(groups.group(-6), group::STRUCTURES);
+    assert_eq!(groups.group(9), group::DOORS);
+    // So the gaps on either side of it go with them too.
+    assert_eq!((-8..=-1).map(|depth| groups.group(depth)).collect::<Vec<_>>(), [group::STRUCTURES; 8]);
+    // Between two layers, or with a known name on one side only, it stays an object.
+    assert_eq!(groups.group(0), group::OBJECTS);
+    assert_eq!(groups.group(11), group::OBJECTS);
+}

@@ -926,7 +926,6 @@ impl MapRenderer {
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lists: &mut DrawLists, document: i32, textures: &BakedTextures) -> Prepared {
         let mut prepared = Prepared { atlas_layers: self.atlas.layers, drawn: self.instance_count, ..Default::default() };
         let version = lists.documents.get(&document).map(|d| d.version);
-        let depths = lists.depths.clone();
         if version.is_none() {
             self.instance_count = 0;
             self.tiles_end = 0;
@@ -938,6 +937,7 @@ impl MapRenderer {
             return prepared;
         }
 
+        let depths = std::sync::Arc::clone(&lists.depths);
         let same_document = self.built.map(|(built, _)| built) == Some(document);
         let (changed, order_changed) = if stale { lists.documents.get_mut(&document).unwrap().take_changes() } else { (Vec::new(), false) };
         // Rebuild the whole buffer, or patch the changed items into it.

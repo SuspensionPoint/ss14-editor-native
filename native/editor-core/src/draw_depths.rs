@@ -10,6 +10,10 @@
 //! - Doors: Doors, BlastDoors, Overdoors.
 //! - Objects: every other name.
 //!
+//! A name the rule does not know goes with the known names on either side of it when both are
+//! on one layer, as a fork's new kind of wall between its walls and wall tops would. Else it is
+//! SubFloor at or below BelowFloor, and Objects above.
+//!
 //! A number between two names belongs with them when both are on one layer, as the gap a fork
 //! leaves between its walls and wall tops, and with Objects when they are not. A number below
 //! every name is SubFloor, and one above every name Objects. On Starlight this gives the very
@@ -71,7 +75,33 @@ impl DepthGroups {
             }
         }
         named.sort_unstable_by_key(|(value, _, _)| *value);
+        // A name the rule does not know, above BelowFloor, between two known names of one layer.
+        let known: Vec<(usize, u32)> = named.iter().enumerate().filter(|(_, entry)| entry.2).map(|(at, entry)| (at, entry.1)).collect();
+        for at in 0..named.len() {
+            let (value, _, is_known) = named[at];
+            if is_known || below_floor.is_some_and(|floor| value <= floor) {
+                continue;
+            }
+            let below = known.iter().rev().find(|(index, _)| *index < at).map(|(_, layer)| *layer);
+            let above = known.iter().find(|(index, _)| *index > at).map(|(_, layer)| *layer);
+            if let (Some(below), Some(above)) = (below, above) {
+                if below == above {
+                    named[at].1 = below;
+                }
+            }
+        }
         DepthGroups { named: named.into_iter().map(|(value, layer, _)| (value, layer)).collect() }
+    }
+
+    /// The layers from the engine's answer to `drawdepths`. When it gave none, or one that
+    /// does not read, Starlight's, with a line that says so: on another fork some things may
+    /// then be under the wrong layer switch.
+    pub fn from_answer(answer: Result<Vec<DrawDepth>, String>) -> (DepthGroups, Option<String>) {
+        match answer {
+            Ok(depths) if !depths.is_empty() => (DepthGroups::from_depths(&depths), None),
+            Ok(_) => (DepthGroups::default(), Some("The engine told no draw depths, so the layer switches use Starlight's".into())),
+            Err(error) => (DepthGroups::default(), Some(format!("The engine didn't tell its draw depths ({}), so the layer switches use Starlight's", error.lines().next().unwrap_or("")))),
+        }
     }
 
     /// The layer of an entity drawn at a depth.

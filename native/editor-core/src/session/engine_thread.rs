@@ -52,8 +52,9 @@ pub(super) enum FromEngine {
     /// A map would not open, with the engine's error. The open document stays.
     NotOpened(String),
     /// The engine is up, with what it tells once: the fork's tiles, prototypes, decals and
-    /// ports, and the layer of each of its draw depths.
-    Ready { document_kernel_ms: u64, view_kernel_ms: u64, warm_up_ms: u64, tiles: Vec<Tile>, prototypes: Vec<Prototype>, decal_prototypes: Vec<DecalPrototype>, ports: Ports, depths: DepthGroups },
+    /// ports, and the layer of each of its draw depths, with a line to show if the engine
+    /// did not tell them.
+    Ready { document_kernel_ms: u64, view_kernel_ms: u64, warm_up_ms: u64, tiles: Vec<Tile>, prototypes: Vec<Prototype>, decal_prototypes: Vec<DecalPrototype>, ports: Ports, depths: DepthGroups, depths_warning: Option<String> },
     /// A map opened, with its links as the engine listed them, or why it would not.
     Opened { scene: Box<SceneJson>, list: Vec<u8>, timing: EngineTiming, path: Option<String>, links: Result<LinksAnswer, String> },
     Changed { list: Option<Vec<u8>>, delta: Option<Box<Delta>>, what: &'static str, seq: u64, asked: Instant, timing: Timing },
@@ -251,8 +252,11 @@ pub(super) fn engine_thread(
     // The ports are static, and asked once. An engine that does not tell them leaves none,
     // and links can still be made with the ports `ports.of` tells.
     let ports = engine.call::<PortsJson>("ports", &json!({})).map(Ports::from_json).unwrap_or_default();
-    // An engine that does not tell its draw depths leaves Starlight's.
-    let depths = engine.call::<Vec<DrawDepth>>("drawdepths", &json!({})).map(|depths| DepthGroups::from_depths(&depths)).unwrap_or_default();
+    // An engine that does not tell its draw depths leaves Starlight's, and the mapper is told.
+    let (depths, depths_warning) = DepthGroups::from_answer(engine.call::<Vec<DrawDepth>>("drawdepths", &json!({})));
+    if let Some(warning) = &depths_warning {
+        eprintln!("{warning}");
+    }
     send(FromEngine::Ready {
         document_kernel_ms: ready["documentKernelMs"].as_u64().unwrap_or(0),
         view_kernel_ms: ready["viewKernelMs"].as_u64().unwrap_or(0),
@@ -262,6 +266,7 @@ pub(super) fn engine_thread(
         decal_prototypes,
         ports,
         depths,
+        depths_warning,
     });
 
     let mut document: Option<i32> = None;

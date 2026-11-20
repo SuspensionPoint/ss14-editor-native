@@ -119,6 +119,7 @@ fn the_engine_being_ready_fills_the_palettes() {
         decal_prototypes: vec![DecalPrototype { id: "Arrows".into(), show_menu: true, ..Default::default() }, DecalPrototype { id: "Hidden".into(), ..Default::default() }],
         ports: Ports::default(),
         depths: DepthGroups::default(),
+        depths_warning: None,
     };
     answers.send(ready).ok().expect("a session to send to");
     assert!(session.pump((640, 640)));
@@ -149,11 +150,47 @@ fn the_engine_being_ready_sorts_draw_depths_by_the_fork_s_names() {
         decal_prototypes: Vec::new(),
         ports: Ports::default(),
         depths,
+        depths_warning: None,
     };
     answers.send(ready).ok().expect("a session to send to");
     assert!(session.pump((640, 640)));
     assert_eq!(group_of(crate::drawlist::KIND_ENTITY, -8, &session.lists.depths), group::STRUCTURES);
     assert_eq!(group_of(crate::drawlist::KIND_ENTITY, -12, &session.lists.depths), group::FLOOR_OBJECTS);
+}
+
+#[test]
+fn an_engine_that_does_not_tell_its_draw_depths_is_said_with_the_first_map() {
+    let (to_engine, _asked) = mpsc::channel();
+    let (answers, from_engine) = mpsc::channel();
+    let mut session = Session::with_channels(to_engine, from_engine, Arc::new(AtomicU64::new(0)), String::new());
+    let (depths, depths_warning) = DepthGroups::from_answer(Err("no such op 'drawdepths'
+   at somewhere".into()));
+    assert_eq!(depths, DepthGroups::default());
+    let ready = FromEngine::Ready {
+        document_kernel_ms: 0,
+        view_kernel_ms: 0,
+        warm_up_ms: 0,
+        tiles: Vec::new(),
+        prototypes: Vec::new(),
+        decal_prototypes: Vec::new(),
+        ports: Ports::default(),
+        depths,
+        depths_warning,
+    };
+    answers.send(ready).ok().expect("a session to send to");
+    session.pump((640, 640));
+    let said = "The engine didn't tell its draw depths (no such op 'drawdepths'), so the layer switches use Starlight's";
+    assert!(session.status_line().ends_with(said), "{}", session.status_line());
+    answer_open(&mut session, &answers);
+    assert!(session.status_line().ends_with(said), "{}", session.status_line());
+    // Once said with the map, the next map's line is its own.
+    answer_open(&mut session, &answers);
+    assert!(!session.status_line().contains("draw depths"), "{}", session.status_line());
+
+    // An answer that told the depths says nothing. One with none is said.
+    let named = |name: &str, value: i32| DrawDepth { name: name.into(), value };
+    assert_eq!(DepthGroups::from_answer(Ok(vec![named("Walls", -8)])).1, None);
+    assert!(DepthGroups::from_answer(Ok(Vec::new())).1.is_some());
 }
 
 #[test]
@@ -173,7 +210,7 @@ fn what_the_engine_reports_moves_the_load_on_and_a_map_that_will_not_open_fails_
     session.map_drawn();
     assert_eq!(current(&session), Some(Step::Prototypes));
 
-    send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default(), depths: DepthGroups::default() });
+    send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default(), depths: DepthGroups::default(), depths_warning: None });
     send(FromEngine::NotOpened("Could not find file 'Bagel.yml'.\n   at somewhere".into()));
     session.pump((640, 640));
     let loading = session.loading.as_ref().unwrap();
@@ -213,7 +250,7 @@ fn started_with_a_map() -> (Session, mpsc::Sender<FromEngine>, mpsc::Receiver<To
     for step in [Step::Runtime, Step::Kernels] {
         answers.send(FromEngine::Reached(step)).ok().expect("a session to send to");
     }
-    answers.send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default(), depths: DepthGroups::default() }).ok().expect("a session to send to");
+    answers.send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default(), depths: DepthGroups::default(), depths_warning: None }).ok().expect("a session to send to");
     answer_open(&mut session, &answers);
     assert!(fades_away(&session));
     session.loading_done();
@@ -291,6 +328,7 @@ fn the_session_finds_a_prototype_by_its_id() {
         decal_prototypes: Vec::new(),
         ports: Ports::default(),
         depths: DepthGroups::default(),
+        depths_warning: None,
     };
     answers.send(ready).ok().expect("a session to send to");
     assert!(session.pump((640, 640)));
