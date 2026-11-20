@@ -1651,7 +1651,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "editor-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bytemuck",
  "lz4_flex",
@@ -4844,7 +4844,7 @@ dependencies = [
 
 [[package]]
 name = "ss14-editor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyrender",
  "base64 0.22.1",
