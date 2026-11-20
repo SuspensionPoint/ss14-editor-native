@@ -922,9 +922,13 @@ public sealed partial class DocumentManager
         var pendingTiles = new Dictionary<EntityUid, List<(Vector2i Index, Tile Old, Tile New)>>();
         var pendingAir = new Dictionary<EntityUid, List<(Vector2i From, Vector2i? To)>>();
         var pendingFix = new List<EntityUid>();
+        var rebased = new List<(int At, DecalEdit Edit)>();
 
         try
         {
+        if (merge && document.Undo.Count > 0)
+            rebased = RebaseDecals(document, document.Undo[^1].Changes, ops, decalChanges);
+
         foreach (var op in ops)
         {
             switch (op.Kind)
@@ -1239,6 +1243,7 @@ public sealed partial class DocumentManager
         {
             // An edit is all or nothing: put back whatever part of it had already happened.
             Rollback(document, changes, createdUids);
+            UnrebaseDecals(document.Undo, rebased);
             throw;
         }
 
@@ -1407,6 +1412,62 @@ public sealed partial class DocumentManager
         if (next > first + 3)
             next -= 4;
         return next * quarter + rest;
+    }
+
+    /// <summary>
+    /// A drag or a turn sends where its decals are now on every frame, merged into one step. The
+    /// decals' changes of the frames before are undone first, so the step takes each decal from
+    /// where the stroke began to where it is now. A decal dragged over a chunk and back then
+    /// leaves the chunks as they were, where on a fork that keeps its decals on chunk entities
+    /// each frame's move would have taken ids and made and dropped chunk entities on the way.
+    /// Only a run of decal changes at the end of the step goes, each of a decal this edit
+    /// changes again, and only changes of a decal that was there before and is still there.
+    /// Changes of other kinds are passed over, since a decal's change touches nothing of theirs.
+    /// </summary>
+    /// <returns>The changes undone, each with where it was in the step, last first.</returns>
+    private List<(int At, DecalEdit Edit)> RebaseDecals(Document document, List<Change> step, IReadOnlyList<EditOp> ops, List<DecalChange> report)
+    {
+        var undone = new List<(int At, DecalEdit Edit)>();
+        var again = new HashSet<(EntityUid Grid, uint Id)>();
+        foreach (var op in ops)
+        {
+            if (op.Kind == "decal.update")
+                again.Add((Owned(document, op.Grid), (uint) op.Uid));
+        }
+
+        if (again.Count == 0)
+            return undone;
+
+        for (var i = step.Count - 1; i >= 0; i--)
+        {
+            if (step[i] is not DecalEdit edit)
+                continue;
+
+            if (edit.Old == null || edit.New == null || !again.Contains((edit.Grid, edit.Id)))
+                break;
+
+            undone.Add((i, edit));
+        }
+
+        foreach (var (at, edit) in undone)
+        {
+            ApplyDecal(edit, forward: false, report);
+            step.RemoveAt(at);
+        }
+
+        return undone;
+    }
+
+    /// <summary>The decal changes RebaseDecals undid done again and put back in their step, for an edit that failed.</summary>
+    private void UnrebaseDecals(List<Step> undo, List<(int At, DecalEdit Edit)> rebased)
+    {
+        var discard = new List<DecalChange>();
+        for (var i = rebased.Count - 1; i >= 0; i--)
+        {
+            var (at, edit) = rebased[i];
+            ApplyDecal(edit, forward: true, discard);
+            undo[^1].Changes.Insert(at, edit);
+        }
     }
 
     private void Rollback(Document document, List<Change> changes, List<EntityUid> created)
