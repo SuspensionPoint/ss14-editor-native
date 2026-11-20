@@ -134,7 +134,34 @@ public static partial class KeepsCheck
         }
 
         say($"  {before.Count} kinds of component, {before.Values.Sum()} in all, compared with {output}");
+        if (OnChunks)
+            failures += Resaved(kernel, text, map, saved.Yaml, say);
         return failures;
+    }
+
+    /// <summary>
+    /// On a fork that keeps its decals on chunk entities: the kernel's resave, as the game's
+    /// resave command, gives the decals what the game's decal system does as a map loads, as
+    /// opening a document does. Its decal chunk entities are those of the document's save, and
+    /// no grid keeps its decals the old way. Said either way.
+    /// </summary>
+    /// <returns>1 if it failed.</returns>
+    private static int Resaved(DocumentKernel kernel, string text, string map, string documentSave, Action<string> say)
+    {
+        var resaved = kernel.Resave(text, map);
+        if (resaved.Yaml == null)
+        {
+            say($"  FAIL  resaved: {resaved.Report.Failure}");
+            return 1;
+        }
+
+        var (saved, again) = (ChunkDecalLines.Model(documentSave.Split('\n')), ChunkDecalLines.Model(resaved.Yaml.Split('\n')));
+        var legacy = resaved.Yaml.Split('\n').Count(line => line.Trim() == "- type: DecalGrid");
+        var ok = saved.SequenceEqual(again) && legacy == 0;
+        say(ok
+            ? $"  ok    resaved: the {again.Count} decal chunk entities are those of the document's save, and no grid keeps its decals the old way"
+            : $"  FAIL  resaved: {legacy} grids keep their decals the old way, and the decal chunk entities are {(saved.SequenceEqual(again) ? "those of the document's save" : $"not those of the document's save: {saved.Count} there and {again.Count} here, the first that differs: {saved.Except(again).Concat(again.Except(saved)).FirstOrDefault() ?? "the same lines, some twice"}")}");
+        return ok ? 0 : 1;
     }
 
     /// <summary>Whether the fork keeps its decals on chunk entities (FORK_DECAL_CHUNK_ENTITIES).</summary>

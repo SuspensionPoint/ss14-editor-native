@@ -400,7 +400,9 @@ public sealed class EditorKernel
 
     /// <summary>
     /// Loads a map and writes it back out with the game's own serializer, using the same
-    /// options and save logic as the game's <c>resave</c> command.
+    /// options and save logic as the game's <c>resave</c> command. On a fork that keeps its
+    /// decals on chunk entities, the decals get what the game's decal system does to them as a
+    /// map loads first, as a document's do as it opens (DocumentManager.StartDecals).
     /// </summary>
     public MapSaveResult Resave(string yaml, string source)
     {
@@ -410,6 +412,12 @@ public sealed class EditorKernel
             return new MapSaveResult(MapReport.Failed(failure, _log.Drain(), sw.ElapsedMilliseconds), null);
 
         var loadMs = sw.ElapsedMilliseconds;
+#if FORK_DECAL_CHUNK_ENTITIES
+        foreach (var map in result!.Maps)
+            Documents.StartDecals(map.Owner);
+        foreach (var grid in result.Grids)
+            Documents.StartDecals(grid.Owner);
+#endif
         _entMan.CullRemovedComponents();
 
         using var writer = new StringWriter { NewLine = "\n" };
