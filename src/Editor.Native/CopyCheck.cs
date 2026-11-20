@@ -1241,6 +1241,10 @@ public static class CopyCheck
         private void Compare(string[] before, string[] after, Clip? clip, string what)
         {
             using var timed = CheckTimes.In(CheckTimes.Compare);
+            // A fork's decal chunk entities that the file did not number are numbered after
+            // everything else, so a paste moves their numbers on. The decals are no part of it.
+            if (ChunkDecalLines.Chunked)
+                (before, after) = (ChunkDecalLines.Without(before), ChunkDecalLines.Without(after));
             var uids = after.Where(line => line.StartsWith("  - uid: ", StringComparison.Ordinal)).Select(line => line.Trim()).ToArray();
             Expect(uids.Length == uids.Distinct().Count(),
                 $"no uid appears twice among the {uids.Length} in the file",
