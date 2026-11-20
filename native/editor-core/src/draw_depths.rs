@@ -77,16 +77,15 @@ impl DepthGroups {
         named.sort_unstable_by_key(|(value, _, _)| *value);
         // A name the rule does not know, above BelowFloor, between two known names of one layer.
         let known: Vec<(usize, u32)> = named.iter().enumerate().filter(|(_, entry)| entry.2).map(|(at, entry)| (at, entry.1)).collect();
-        for at in 0..named.len() {
-            let (value, _, is_known) = named[at];
-            if is_known || below_floor.is_some_and(|floor| value <= floor) {
+        for (at, (value, layer, is_known)) in named.iter_mut().enumerate() {
+            if *is_known || below_floor.is_some_and(|floor| *value <= floor) {
                 continue;
             }
             let below = known.iter().rev().find(|(index, _)| *index < at).map(|(_, layer)| *layer);
             let above = known.iter().find(|(index, _)| *index > at).map(|(_, layer)| *layer);
             if let (Some(below), Some(above)) = (below, above) {
                 if below == above {
-                    named[at].1 = below;
+                    *layer = below;
                 }
             }
         }
