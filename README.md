@@ -15,18 +15,14 @@ the editor loads the same way on a server.
 
 - **Open your fork.** Point the editor at a fork you already have, or download a popular one
   from the start screen. It builds whatever that fork's code needs, once.
-- **Tools like an art program's**: pick a tool, then what it works on and in what shape. Paint
-  and Erase work on tiles, entities or decals, at a point or in a line, rectangle, circle,
-  lasso or polygon. Closed shapes can be filled or just their outline. Erase takes everything you can see, so hide a layer to keep what's on it, or turn on Only
-  to erase just what's in hand. Fill floods an area of one tile with a tile, an entity or a
-  decal. R turns the entity you're about to put down, whatever the shape.
+- **Tools like an art program's**: pick a tool, then what it works on and its shape. Paint
+  and Erase work on tiles, entities or decals, at a point or as a line, rectangle, circle,
+  lasso or polygon, filled or just the outline. Erase takes what you can see, so hide a layer
+  to keep what's on it, or turn on Only to erase just what's in hand. Fill floods an area of
+  one tile with a tile, an entity or a decal. R turns the entity you're about to put down.
 - **Rooms**: draw a room as a rectangle, ellipse, lasso or polygon and get the floor inside,
-  plating and walls round the edge, in one step, with no gap at a corner. Walls already there are never stacked. Turn on Join overlapping rooms for
-  hallways and extensions.
-- **Entities**: place, select, move, turn, delete, and nudge with the arrow keys. Edit
-  components in typed forms or as raw text, and put things into containers. Walls, windows,
-  grilles and doors placed out in space get plating under them. You can switch this off or pick
-  another tile.
+  plating and walls round the edge, in one step. Walls already there are never stacked. Turn
+  on Join overlapping rooms for hallways and extensions.
 - **Select** entities, decals, or with Tiles a region of cells, with a rectangle, ellipse,
   lasso or polygon, or Select same to grab every tile or thing like the one you click. A
   region can be any shape. Copy, cut, paste, turn or delete it with everything on it. Save it

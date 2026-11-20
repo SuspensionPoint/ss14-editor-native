@@ -98,8 +98,8 @@ impl DepthGroups {
     pub fn from_answer(answer: Result<Vec<DrawDepth>, String>) -> (DepthGroups, Option<String>) {
         match answer {
             Ok(depths) if !depths.is_empty() => (DepthGroups::from_depths(&depths), None),
-            Ok(_) => (DepthGroups::default(), Some("The engine told no draw depths, so the layer switches use Starlight's".into())),
-            Err(error) => (DepthGroups::default(), Some(format!("The engine didn't tell its draw depths ({}), so the layer switches use Starlight's", error.lines().next().unwrap_or("")))),
+            Ok(_) => (DepthGroups::default(), Some("This fork reported no draw depths, so the layer switches use Starlight's grouping".into())),
+            Err(error) => (DepthGroups::default(), Some(format!("Couldn't read this fork's draw depths ({}), so the layer switches use Starlight's grouping", error.lines().next().unwrap_or("")))),
         }
     }
 

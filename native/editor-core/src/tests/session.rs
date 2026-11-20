@@ -178,7 +178,7 @@ fn an_engine_that_does_not_tell_its_draw_depths_is_said_with_the_first_map() {
     };
     answers.send(ready).ok().expect("a session to send to");
     session.pump((640, 640));
-    let said = "The engine didn't tell its draw depths (no such op 'drawdepths'), so the layer switches use Starlight's";
+    let said = "Couldn't read this fork's draw depths (no such op 'drawdepths'), so the layer switches use Starlight's grouping";
     assert!(session.status_line().ends_with(said), "{}", session.status_line());
     answer_open(&mut session, &answers);
     assert!(session.status_line().ends_with(said), "{}", session.status_line());
