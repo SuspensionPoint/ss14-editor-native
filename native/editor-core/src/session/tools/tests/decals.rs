@@ -130,7 +130,7 @@ fn choosing_a_decal_keeps_a_brush_and_takes_paint_from_any_other_tool() {
         session.choose_decal("Arrows");
 
         assert_eq!((session.palette(), session.chosen_decal()), (&Palette::Decal("Arrows".into()), Some("Arrows")), "{tool:?}");
-        let kept = matches!(tool, Tool::Paint | Tool::Erase | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle);
+        let kept = matches!(tool, Tool::Paint | Tool::Erase | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon);
         assert_eq!(session.tool(), if kept { tool } else { Tool::Paint }, "{tool:?}");
         // Nothing else is chosen any more.
         assert_eq!((session.chosen_tile(), session.chosen_entity()), (None, None), "{tool:?}");
@@ -352,7 +352,7 @@ fn only_the_tools_that_put_a_decal_down_show_its_ghost() {
         session.choose_decal("Arrows");
         session.set_tool(tool);
         session.pointer_move(at(&session, (2.5, 3.5)), VIEW);
-        let shows = matches!(tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle);
+        let shows = matches!(tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon);
         assert_eq!(session.overlay_quads().1.len(), if shows { FLOATS_PER_QUAD } else { 0 }, "{tool:?}");
     }
 

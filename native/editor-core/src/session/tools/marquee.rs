@@ -19,7 +19,7 @@ use super::*;
 use crate::toolbox::SelectShape;
 
 /// The most corners a lasso or a polygon keeps.
-const MOST_POINTS: usize = 10_000;
+pub(super) const MOST_POINTS: usize = 10_000;
 
 /// How near the first corner of a polygon a click closes it, in pixels.
 const CLOSE_ON_FIRST: f32 = 8.0;
@@ -29,7 +29,7 @@ const CLOSE_ON_FIRST: f32 = 8.0;
 const CLOSE_ON_LAST: f32 = 4.0;
 
 /// How far the cursor goes before a lasso takes another corner, in pixels.
-const LASSO_STEP: f32 = 2.0;
+pub(super) const LASSO_STEP: f32 = 2.0;
 
 /// How many sides the outline of an ellipse is drawn with.
 const ELLIPSE_SIDES: usize = 64;
@@ -163,6 +163,16 @@ pub(super) fn contiguous(start: (i32, i32), same: impl Fn((i32, i32)) -> bool, l
     }
     cells.sort_unstable();
     Ok(cells)
+}
+
+/// Whether a click at `point`, in pixels of the view, closes a polygon with these corners on
+/// the map: near its first corner, with three or more, or near its last (a double-click).
+pub(super) fn closes_polygon(camera: &Camera, view: (u32, u32), points: &[(f32, f32)], point: (f32, f32)) -> bool {
+    let near = |corner: (f32, f32), within: f32| {
+        let at = camera.view_at(corner, view);
+        (at.0 - point.0).hypot(at.1 - point.1) <= within
+    };
+    (points.len() >= 3 && near(points[0], CLOSE_ON_FIRST)) || points.last().is_some_and(|&last| near(last, CLOSE_ON_LAST))
 }
 
 /// The corners of an ellipse filling a box, for its outline.
@@ -309,12 +319,7 @@ impl Session {
     pub(super) fn polygon_click(&mut self, world: (f32, f32), point: (f32, f32), view: (u32, u32)) {
         let camera = self.camera;
         let Some(polygon) = self.marqueeing.polygon.as_mut() else { return };
-        let near = |corner: (f32, f32), within: f32| {
-            let at = camera.view_at(corner, view);
-            (at.0 - point.0).hypot(at.1 - point.1) <= within
-        };
-        let closes = (polygon.points.len() >= 3 && near(polygon.points[0], CLOSE_ON_FIRST)) || polygon.points.last().is_some_and(|&last| near(last, CLOSE_ON_LAST));
-        if !closes {
+        if !closes_polygon(&camera, view, &polygon.points, point) {
             if polygon.points.len() < MOST_POINTS {
                 polygon.points.push(world);
             }
@@ -323,9 +328,13 @@ impl Session {
         self.close_polygon();
     }
 
-    /// Enter: closes a polygon being clicked out, which selects what it covers. Says whether
-    /// there was one.
+    /// Enter: closes a polygon being clicked out, which selects what it covers, or for Paint
+    /// and Erase puts down or takes away what it covers (`trace.rs`). Says whether there was
+    /// one.
     pub fn enter_key(&mut self) -> bool {
+        if self.close_trace() {
+            return true;
+        }
         if !self.marqueeing.is_live() || !matches!(self.tool, Tool::Area | Tool::Select) {
             return false;
         }
@@ -469,8 +478,9 @@ impl Session {
 
     /// The outline of the shape of Select being drawn. An ellipse of a region fills the box of
     /// cells it goes by. A polygon is open, from its first corner to the cursor.
+    /// A lasso or polygon of Paint or Erase gives its own (`trace_path`).
     pub fn marquee_path(&self) -> Option<MarqueePath> {
-        let (covered, grid, mode) = self.drawn_shape()?;
+        let Some((covered, grid, mode)) = self.drawn_shape() else { return self.trace_path() };
         let style = mode_style(mode);
         let polygon = self.marqueeing.polygon.as_ref().filter(|_| !matches!(self.drag, Drag::Marquee(_)));
         Some(match covered {

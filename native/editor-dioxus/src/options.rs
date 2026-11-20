@@ -5,7 +5,7 @@
 
 use dioxus_native::prelude::*;
 use editor_core::session::{decal_colour_bytes, CableKind, PipeNetwork, PIPE_COLOURS};
-use editor_core::toolbox::{BarTool, SelectMode, SelectShape, Shape, Target};
+use editor_core::toolbox::{BarTool, SelectMode, SelectShape, Shape, ShapeFill, Target};
 
 use crate::icons::Icon;
 use crate::palettes::{ColourField, NumberField, PaletteTab};
@@ -74,6 +74,16 @@ fn shape_icon(shape: Shape) -> &'static str {
         Shape::Line => "line",
         Shape::Rectangle => "rectangle",
         Shape::Circle => "circle",
+        Shape::Lasso => "lasso",
+        Shape::Polygon => "polygon",
+    }
+}
+
+/// The icon of Fill or Outline.
+fn fill_icon(fill: ShapeFill) -> &'static str {
+    match fill {
+        ShapeFill::Fill => "shape-fill",
+        ShapeFill::Outline => "shape-outline",
     }
 }
 
@@ -115,7 +125,7 @@ pub(crate) fn follow_target(editor: &mut Editor) {
 #[component]
 pub(crate) fn OptionsBar() -> Element {
     let _ = watch();
-    let (bar, target, shape) = with(|editor| (editor.session.bar_tool(), editor.session.target(), editor.session.shape()));
+    let (bar, target, shape, fill) = with(|editor| (editor.session.bar_tool(), editor.session.target(), editor.session.shape(), editor.session.shape_fill()));
     let point = shape == Some(Shape::Point);
     rsx! {
         div { class: "options-bar",
@@ -128,6 +138,9 @@ pub(crate) fn OptionsBar() -> Element {
                     if let Some(shape) = shape {
                         div { class: "options-rule" }
                         ShapeChoices { shape }
+                        if let (true, Some(fill)) = (shape.closed(), fill) {
+                            FillChoices { fill }
+                        }
                     }
                     if bar == BarTool::Paint && target != Target::Tiles && point {
                         div { class: "options-rule" }
@@ -145,7 +158,7 @@ pub(crate) fn OptionsBar() -> Element {
                         div { class: "options-rule" }
                         EraseOptions {}
                     }
-                    span { class: "hint-text", "{target_hint(bar, target, point)}" }
+                    span { class: "hint-text", "{options_hint(bar, target, shape)}" }
                 },
                 BarTool::Select => rsx! { SelectOptions {} },
                 BarTool::Room => rsx! { crate::placing::RoomOptions {} },
@@ -157,6 +170,18 @@ pub(crate) fn OptionsBar() -> Element {
             }
         }
     }
+}
+
+/// The line of help after the options of Paint, Erase and Fill: how a lasso or polygon is
+/// drawn, then what the target says.
+pub(crate) fn options_hint(bar: BarTool, target: Target, shape: Option<Shape>) -> String {
+    let drawn = match shape {
+        Some(Shape::Lasso) => "Drag around the cells. Letting go closes the loop",
+        Some(Shape::Polygon) => "Click each corner. Click the first one, double-click or press Enter to finish",
+        _ => "",
+    };
+    let said = target_hint(bar, target, shape == Some(Shape::Point));
+    [drawn, said].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join(". ")
 }
 
 /// The line of help after the options of Paint, Erase and Fill, for their target. Paint of
@@ -198,6 +223,20 @@ fn ShapeChoices(shape: Shape) -> Element {
         Choices { label: "Shape", items,
             onpick: move |at: usize| {
                 with(|editor| editor.session.set_shape(Shape::ALL[at]));
+                bump();
+            }
+        }
+    }
+}
+
+/// Whether the closed shapes of Paint or Erase work on every cell inside or on the edge alone.
+#[component]
+fn FillChoices(fill: ShapeFill) -> Element {
+    let items: Vec<Choice> = ShapeFill::ALL.iter().map(|&each| Choice::new(fill_icon(each), each.name(), each == fill)).collect();
+    rsx! {
+        Choices { label: "", items,
+            onpick: move |at: usize| {
+                with(|editor| editor.session.set_shape_fill(ShapeFill::ALL[at]));
                 bump();
             }
         }

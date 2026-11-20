@@ -366,7 +366,7 @@ impl Session {
     pub fn delete_key(&mut self) {
         match self.tool {
             Tool::Area if self.region.is_some() => self.delete_region(),
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.delete_selection(),
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon | Tool::Room | Tool::Area | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.delete_selection(),
         }
     }
 

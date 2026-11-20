@@ -1,7 +1,7 @@
 use super::*;
 
 /// Every session tool, for checks that go through them all.
-const EVERY: [Tool; 15] = [
+const EVERY: [Tool; 17] = [
     Tool::Pan,
     Tool::Paint,
     Tool::Erase,
@@ -10,6 +10,8 @@ const EVERY: [Tool; 15] = [
     Tool::Rectangle,
     Tool::Line,
     Tool::Circle,
+    Tool::Lasso,
+    Tool::Polygon,
     Tool::Room,
     Tool::Area,
     Tool::Select,
@@ -71,7 +73,7 @@ fn paint_at_a_point_places_entities_and_paints_tiles_and_decals() {
 #[test]
 fn paint_in_a_shape_is_the_shape_tool_whatever_the_target() {
     let mut toolbox = Toolbox::default();
-    for (shape, tool) in [(Shape::Line, Tool::Line), (Shape::Rectangle, Tool::Rectangle), (Shape::Circle, Tool::Circle)] {
+    for (shape, tool) in [(Shape::Line, Tool::Line), (Shape::Rectangle, Tool::Rectangle), (Shape::Circle, Tool::Circle), (Shape::Lasso, Tool::Lasso), (Shape::Polygon, Tool::Polygon)] {
         toolbox.set_shape(BarTool::Paint, shape);
         for target in Target::ALL {
             toolbox.target = target;
@@ -202,9 +204,20 @@ fn each_target_gives_back_what_was_last_in_hand_for_it() {
 
 #[test]
 fn the_options_read_back_from_their_settings_text() {
-    let options = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Rectangle, select: SelectTargets { entities: false, decals: true, tiles: true }, place_free: true, erase_only: true, select_shape: SelectShape::Polygon, select_contiguous: false };
+    let options = ToolOptions {
+        paint_shape: Shape::Circle,
+        erase_shape: Shape::Rectangle,
+        paint_fill: ShapeFill::Outline,
+        erase_fill: ShapeFill::Fill,
+        select: SelectTargets { entities: false, decals: true, tiles: true },
+        place_free: true,
+        erase_only: true,
+        select_shape: SelectShape::Polygon,
+        select_contiguous: false,
+    };
     let text = serde_json::to_string(&options).unwrap();
     assert!(text.contains("\"circle\""), "{text}");
+    assert!(text.contains("\"paint_fill\":\"outline\""), "{text}");
     assert!(text.contains("\"polygon\""), "{text}");
     assert_eq!(serde_json::from_str::<ToolOptions>(&text).unwrap(), options);
     // Missing fields are the defaults.

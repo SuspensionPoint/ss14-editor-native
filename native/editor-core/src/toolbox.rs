@@ -7,7 +7,7 @@
 //! each of them for one toolbar tool (`BarTool::of`):
 //!
 //! - Paint with a shape of Point is the session's Paint, or Place with Entities as the target.
-//!   Line, Rectangle and Circle are the session's Line, Rectangle and Circle.
+//!   Line, Rectangle, Circle, Lasso and Polygon are the session's tools of those names.
 //! - Erase is the session's Erase, whatever the shape. The eraser reads its shape at the press.
 //!   It takes away everything of its target that can be seen, or with Only on just the kind in
 //!   hand (`ToolOptions::erase_only`).
@@ -19,8 +19,11 @@
 //! The target is what Paint and Erase work on. It follows the palette: choosing a tile makes it
 //! Tiles. Setting it gives back what was last in hand for it (`Toolbox::recall`).
 //!
-//! The shapes, the select tool's targets and shape, Select same's Contiguous, free placing and
-//! Erase's Only are kept in the settings file (`ToolOptions`).
+//! The closed shapes of Paint and Erase (Rectangle, Circle, Lasso and Polygon) are filled or
+//! just their edge (`ShapeFill`), read at the press.
+//!
+//! The shapes, Fill or Outline, the select tool's targets and shape, Select same's Contiguous,
+//! free placing and Erase's Only are kept in the settings file (`ToolOptions`).
 
 use serde::{Deserialize, Serialize};
 
@@ -89,7 +92,7 @@ impl BarTool {
     /// The toolbar tool a session tool belongs to.
     pub fn of(tool: Tool) -> BarTool {
         match tool {
-            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Place => BarTool::Paint,
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon | Tool::Place => BarTool::Paint,
             Tool::Erase => BarTool::Erase,
             Tool::Select | Tool::Area => BarTool::Select,
             Tool::Pan => BarTool::Pan,
@@ -149,10 +152,14 @@ pub enum Shape {
     Line,
     Rectangle,
     Circle,
+    /// A freehand line dragged around the cells, closed when the button comes up.
+    Lasso,
+    /// Corners clicked one at a time, closed on the first corner, by a double-click or Enter.
+    Polygon,
 }
 
 impl Shape {
-    pub const ALL: [Shape; 4] = [Shape::Point, Shape::Line, Shape::Rectangle, Shape::Circle];
+    pub const ALL: [Shape; 6] = [Shape::Point, Shape::Line, Shape::Rectangle, Shape::Circle, Shape::Lasso, Shape::Polygon];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -160,7 +167,14 @@ impl Shape {
             Shape::Line => "Line",
             Shape::Rectangle => "Rectangle",
             Shape::Circle => "Circle",
+            Shape::Lasso => "Lasso",
+            Shape::Polygon => "Polygon",
         }
+    }
+
+    /// Whether it has an inside, so that it can be filled or be just its edge (`ShapeFill`).
+    pub fn closed(self) -> bool {
+        matches!(self, Shape::Rectangle | Shape::Circle | Shape::Lasso | Shape::Polygon)
     }
 
     /// The session tool that paints in it, Point aside, which depends on the target.
@@ -170,6 +184,30 @@ impl Shape {
             Shape::Line => Some(Tool::Line),
             Shape::Rectangle => Some(Tool::Rectangle),
             Shape::Circle => Some(Tool::Circle),
+            Shape::Lasso => Some(Tool::Lasso),
+            Shape::Polygon => Some(Tool::Polygon),
+        }
+    }
+}
+
+/// Whether a closed shape of Paint or Erase works on every cell inside it or only on its edge:
+/// the cells of it that touch a cell outside it side by side. A rectangle's edge is its border
+/// and a circle's its ring.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShapeFill {
+    #[default]
+    Fill,
+    Outline,
+}
+
+impl ShapeFill {
+    pub const ALL: [ShapeFill; 2] = [ShapeFill::Fill, ShapeFill::Outline];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ShapeFill::Fill => "Fill",
+            ShapeFill::Outline => "Outline",
         }
     }
 }
@@ -312,6 +350,10 @@ impl SelectTargets {
 pub struct ToolOptions {
     pub paint_shape: Shape,
     pub erase_shape: Shape,
+    /// Whether Paint's closed shapes are filled or just their edge.
+    pub paint_fill: ShapeFill,
+    /// Whether Erase's closed shapes are filled or just their edge.
+    pub erase_fill: ShapeFill,
     pub select: SelectTargets,
     /// Whether Paint at a point puts an entity or a decal where the cursor is, and not on its
     /// cell. Shift does the other for one press.
@@ -331,6 +373,8 @@ impl Default for ToolOptions {
         ToolOptions {
             paint_shape: Shape::default(),
             erase_shape: Shape::default(),
+            paint_fill: ShapeFill::default(),
+            erase_fill: ShapeFill::default(),
             select: SelectTargets::default(),
             place_free: false,
             erase_only: false,
@@ -439,6 +483,26 @@ impl Toolbox {
         true
     }
 
+    /// Whether the closed shapes of Paint or Erase are filled or just their edge.
+    pub fn fill(&self, bar: BarTool) -> Option<ShapeFill> {
+        match bar {
+            BarTool::Paint => Some(self.options.paint_fill),
+            BarTool::Erase => Some(self.options.erase_fill),
+            _ => None,
+        }
+    }
+
+    /// Sets whether the closed shapes of Paint or Erase are filled or just their edge. Gives
+    /// back whether it was one of those.
+    pub fn set_fill(&mut self, bar: BarTool, fill: ShapeFill) -> bool {
+        match bar {
+            BarTool::Paint => self.options.paint_fill = fill,
+            BarTool::Erase => self.options.erase_fill = fill,
+            _ => return false,
+        }
+        true
+    }
+
     /// Takes in a session tool that was taken in hand some other way, as by a key or a choice
     /// in a palette, so that the toolbar shows what it stands for. A shape tool is Paint's
     /// shape, the place tool is Paint at a point on entities, the area tool is Select with
@@ -448,6 +512,8 @@ impl Toolbox {
             Tool::Line => self.options.paint_shape = Shape::Line,
             Tool::Rectangle => self.options.paint_shape = Shape::Rectangle,
             Tool::Circle => self.options.paint_shape = Shape::Circle,
+            Tool::Lasso => self.options.paint_shape = Shape::Lasso,
+            Tool::Polygon => self.options.paint_shape = Shape::Polygon,
             Tool::Place => {
                 self.options.paint_shape = Shape::Point;
                 self.target = Target::Entities;

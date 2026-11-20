@@ -59,15 +59,18 @@ fn changing_the_tool_ends_a_drag() {
             session.pointer_down(at(&session, pressed), VIEW, Button::Primary);
             session.pointer_move(at(&session, (pressed.0 + 1.0, pressed.1)), VIEW);
             // Every tool has begun a drag but the pick and the fill, which are done with the
-            // press, and the link tool, which drags nothing.
-            let begins = !matches!(tool, Tool::Pick | Tool::Fill | Tool::Link);
+            // press, the link tool, which drags nothing, and Paint's polygon, which has begun
+            // a polygon that outlives the press.
+            let begins = !matches!(tool, Tool::Pick | Tool::Fill | Tool::Link | Tool::Polygon);
             assert_eq!(!matches!(session.drag, Drag::None), begins, "{tool:?} at {pressed:?}");
+            assert_eq!(session.tracing.is_live(), tool == Tool::Polygon, "{tool:?} at {pressed:?}");
             asked(&engine);
 
             // Another tool is taken in hand with the button still down.
             let next = if tool == Tool::Fill { Tool::Pick } else { Tool::Fill };
             session.set_tool(next);
             assert!(matches!(session.drag, Drag::None), "{tool:?} at {pressed:?}");
+            assert!(!session.tracing.is_live(), "{tool:?} at {pressed:?}");
             let before = (session.selection.clone(), (session.camera.x, session.camera.y, session.camera.zoom));
 
             // What follows is a bare hover and a release that comes late.
@@ -107,7 +110,7 @@ fn r_turns_with_an_entity_tool_and_chooses_the_rectangle_otherwise() {
                 click(&mut session, (2.5, 3.5));
                 assert_ne!(asked(&engine)[0][0]["rotation"], json!(0.0));
             }
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {
                 assert_eq!((session.tool(), asked_for), (Tool::Rectangle, Vec::new()), "{tool:?}");
             }
         }

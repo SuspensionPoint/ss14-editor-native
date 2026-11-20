@@ -174,7 +174,7 @@ impl Session {
     /// Whether the wheel turns the placement angle now: R held since it turned it, a decal
     /// chosen and a brush that places one in hand.
     pub(super) fn decal_wheel_turns(&self) -> bool {
-        self.decaling.held && self.chosen_decal().is_some() && matches!(self.tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill)
+        self.decaling.held && self.chosen_decal().is_some() && matches!(self.tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon | Tool::Fill)
     }
 
     /// The wheel turned with R held for a brush: the placement angle turns by five degrees a
@@ -329,7 +329,7 @@ impl Session {
     /// would put it. Only the tools that put a decal down show it, and not while a shape is
     /// dragged out, which shows its cells instead.
     pub(super) fn decal_overlay(&mut self, over: &mut Vec<f32>) {
-        let shows = matches!(self.tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle) && matches!(self.drag, Drag::None | Drag::Stroke(_));
+        let shows = matches!(self.tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon) && matches!(self.drag, Drag::None | Drag::Stroke(_));
         let (true, Some(world), Some(id)) = (shows, self.hover, self.chosen_decal()) else { return };
         let Some(file) = self.decal_prototype(id).and_then(DecalPrototype::file) else { return };
         let free = self.tool == Tool::Paint && self.decal_free();

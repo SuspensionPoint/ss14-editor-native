@@ -61,7 +61,7 @@ impl Session {
         match self.tool {
             Tool::Area => self.nudge_region(way, name),
             Tool::Select => self.nudge_selection(way, name, fine),
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => {}
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon | Tool::Room | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => {}
         }
     }
 

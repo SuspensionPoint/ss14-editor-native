@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::forks::settings::Settings;
-use crate::toolbox::{BarTool, KeyAction, SelectMode, SelectShape, SelectTargets, Shape, Target, ToolOptions, Toolbox};
+use crate::toolbox::{BarTool, KeyAction, SelectMode, SelectShape, SelectTargets, Shape, ShapeFill, Target, ToolOptions, Toolbox};
 
 /// The toolbar's state, and the settings file its options are kept in.
 #[derive(Default)]
@@ -97,6 +97,26 @@ impl Session {
             self.take_bar_tool(bar);
             self.save_tool_options();
         }
+    }
+
+    /// Whether the closed shapes of the toolbar tool in hand, Paint's or Erase's, are filled or
+    /// just their edge. None for any other tool.
+    pub fn shape_fill(&self) -> Option<ShapeFill> {
+        self.tooling.toolbox.fill(self.bar_tool())
+    }
+
+    /// Sets whether the closed shapes of the toolbar tool in hand, Paint's or Erase's, are
+    /// filled or just their edge, and keeps it.
+    pub fn set_shape_fill(&mut self, fill: ShapeFill) {
+        let bar = self.bar_tool();
+        if self.tooling.toolbox.set_fill(bar, fill) {
+            self.save_tool_options();
+        }
+    }
+
+    /// Whether a press of the tool in hand draws a closed shape's edge alone (Outline).
+    pub(super) fn press_outline(&self) -> bool {
+        self.shape_fill() == Some(ShapeFill::Outline)
     }
 
     /// Switches one of the select tool's targets on or off and keeps it. The last one on stays

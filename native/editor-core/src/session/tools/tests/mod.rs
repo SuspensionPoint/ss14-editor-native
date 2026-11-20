@@ -34,6 +34,7 @@ mod select;
 mod shapes;
 mod tiles;
 mod toolbar;
+mod trace;
 mod turning;
 mod view;
 

@@ -16,8 +16,8 @@ the editor loads the same way on a server.
 - **Open your fork.** Point the editor at a fork you already have, or download a popular one
   from the start screen. It builds whatever that fork's code needs, once.
 - **Tools like an art program's**: pick a tool, then what it works on and in what shape. Paint
-  and Erase work on tiles, entities or decals, at a point or in a line, rectangle or circle.
-  Erase takes everything you can see, so hide a layer to keep what's on it, or turn on Only
+  and Erase work on tiles, entities or decals, at a point or in a line, rectangle, circle,
+  lasso or polygon. Closed shapes can be filled or just their outline. Erase takes everything you can see, so hide a layer to keep what's on it, or turn on Only
   to erase just what's in hand. Fill floods an area of one tile with a tile, an entity or a
   decal. R turns the entity you're about to put down, whatever the shape.
 - **Rooms**: drag out a room and get the floor inside, plating and walls round the edge, in

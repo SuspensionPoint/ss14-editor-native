@@ -4,7 +4,7 @@
 use super::decals::decals_on_map;
 use super::*;
 use crate::forks::settings::Settings;
-use crate::toolbox::{BarTool, SelectMode, SelectShape, SelectTargets, Shape, Target, ToolOptions};
+use crate::toolbox::{BarTool, SelectMode, SelectShape, SelectTargets, Shape, ShapeFill, Target, ToolOptions};
 
 /// Presses a key and lets it go.
 fn tap(session: &mut Session, key: char) {
@@ -255,6 +255,7 @@ fn the_options_are_kept_in_the_settings_file() {
     tap(&mut session, 'C');
     session.take_bar_tool(BarTool::Erase);
     session.set_shape(Shape::Line);
+    session.set_shape_fill(ShapeFill::Outline);
     session.take_bar_tool(BarTool::Select);
     session.toggle_select_target(Target::Decals);
     session.set_place_free(true);
@@ -265,7 +266,17 @@ fn the_options_are_kept_in_the_settings_file() {
 
     let read = Settings::load(&file);
     assert!(read.animate_sprites);
-    let kept = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Line, select: SelectTargets { entities: true, decals: false, tiles: false }, place_free: true, erase_only: false, select_shape: SelectShape::Lasso, select_contiguous: false };
+    let kept = ToolOptions {
+        paint_shape: Shape::Circle,
+        erase_shape: Shape::Line,
+        paint_fill: ShapeFill::Fill,
+        erase_fill: ShapeFill::Outline,
+        select: SelectTargets { entities: true, decals: false, tiles: false },
+        place_free: true,
+        erase_only: false,
+        select_shape: SelectShape::Lasso,
+        select_contiguous: false,
+    };
     assert_eq!(read.tools, kept);
 
     // A session reads them back.

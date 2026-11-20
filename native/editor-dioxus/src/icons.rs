@@ -33,6 +33,8 @@ const ICONS: &[(&str, &str)] = &[
     ("lasso", include_str!("../assets/icons/lasso.svg")),
     ("polygon", include_str!("../assets/icons/polygon-lasso.svg")),
     ("same", include_str!("../assets/icons/wand-sparkles.svg")),
+    ("shape-fill", include_str!("../assets/icons/shape-fill.svg")),
+    ("shape-outline", include_str!("../assets/icons/shape-outline.svg")),
     ("replace", include_str!("../assets/icons/square.svg")),
     ("add", include_str!("../assets/icons/square-plus.svg")),
     ("subtract", include_str!("../assets/icons/square-minus.svg")),

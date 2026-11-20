@@ -4,8 +4,9 @@ use super::*;
 use crate::renderer::group_of;
 use crate::toolbox::Target;
 
-/// A fill larger than this is refused rather than sent.
-const FILL_LIMIT: usize = 50_000;
+/// A fill larger than this is refused rather than sent. So is a lasso or polygon of Paint or
+/// Erase covering more cells than this, whatever it puts down.
+pub(super) const FILL_LIMIT: usize = 50_000;
 
 /// A shape or a fill of entities or decals of more cells than this is refused rather than sent.
 pub(super) const SHAPE_LIMIT: usize = 10_000;
@@ -112,14 +113,21 @@ pub(in crate::session) struct RectangleDrag {
     to: (i32, i32),
     /// None when nothing it can put down was chosen at the press. It sets nothing then.
     brush: Option<Brush>,
+    /// Whether it is just its border (Outline).
+    outline: bool,
 }
 
 impl RectangleDrag {
+    /// The cells it covers now: its border alone with Outline.
+    fn cells(&self) -> Vec<(i32, i32)> {
+        let cells = rectangle_cells(self.from, self.to);
+        if self.outline { shapes::edge_cells(&cells) } else { cells }
+    }
+
     /// Its grid, its cells and the entity it puts down, if it puts one down.
     pub(super) fn entity_cells(&self) -> Option<(i32, Vec<(i32, i32)>, usize)> {
         let Some(Brush::Entity(index)) = &self.brush else { return None };
-        let index = *index;
-        Some((self.grid, rectangle_cells(self.from, self.to), index))
+        Some((self.grid, self.cells(), *index))
     }
 }
 
@@ -377,6 +385,8 @@ impl Session {
             crate::toolbox::Shape::Rectangle => self.rectangle_down(world),
             crate::toolbox::Shape::Line => self.shape_down(world, shapes::Shape::Line),
             crate::toolbox::Shape::Circle => self.shape_down(world, shapes::Shape::Circle),
+            crate::toolbox::Shape::Lasso => self.brush_trace_down(world, trace::Trace::Lasso),
+            crate::toolbox::Shape::Polygon => self.brush_trace_down(world, trace::Trace::Polygon),
         }
     }
 
@@ -411,8 +421,9 @@ impl Session {
         // With nothing it can put down chosen the rectangle is dragged out all the same, and
         // sets nothing when it is let go.
         let brush = self.brush_for_press();
+        let outline = self.press_outline();
         if let Some((grid, cell)) = self.cell_at(world) {
-            self.drag = Drag::Rectangle(RectangleDrag { grid, from: cell, to: cell, brush });
+            self.drag = Drag::Rectangle(RectangleDrag { grid, from: cell, to: cell, brush, outline });
         }
     }
 
@@ -435,12 +446,29 @@ impl Session {
     }
 
     /// A rectangle was let go: puts the brush it was pressed with down on every cell from
-    /// corner to corner, as one edit.
+    /// corner to corner, or on its border alone, as one edit.
     pub(super) fn rectangle_up(&mut self, drag: RectangleDrag) {
-        let RectangleDrag { grid, from, to, brush } = drag;
-        let Some(brush) = brush else { return };
-        let cells = rectangle_cells(from, to);
-        self.put_shape(grid, &cells, &brush, ("Rectangle of tiles", "Rectangle of entities", "Rectangle of decals"), "rectangle");
+        let cells = drag.cells();
+        let Some(brush) = drag.brush else { return };
+        self.put_shape(drag.grid, &cells, &brush, ("Rectangle of tiles", "Rectangle of entities", "Rectangle of decals"), "rectangle");
+    }
+
+    /// The cells of a rectangle being dragged out with Outline, filled, for `overlay_quads`.
+    /// A filled one shows its outline alone, as it always has.
+    pub(super) fn rectangle_overlay(&self, over: &mut Vec<f32>) {
+        let Drag::Rectangle(drag) = &self.drag else { return };
+        if !drag.outline {
+            return;
+        }
+        let Some(grid) = self.doc.as_ref().and_then(|doc| doc.grid(drag.grid)) else { return };
+        for cell in drag.cells() {
+            for corner in grid.cells_outline(cell, cell) {
+                over.extend_from_slice(&[corner.0, corner.1]);
+            }
+            over.extend_from_slice(&[68.0 / 255.0, 136.0 / 255.0, 1.0, 0.25]);
+            over.push(WHITE_TEXTURE as f32);
+            over.extend_from_slice(&WHITE_SOURCE);
+        }
     }
 
     /// The outline of a rectangle being dragged out.

@@ -279,7 +279,7 @@ impl Session {
     fn ghost_target(&self) -> Option<GhostTarget> {
         let brush = match self.tool {
             Tool::Place => false,
-            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => true,
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon => true,
             Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => return None,
         };
         if !matches!(self.drag, Drag::None | Drag::Stroke(_) | Drag::Place(_)) {

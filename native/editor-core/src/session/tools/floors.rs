@@ -112,7 +112,7 @@ impl Session {
     /// The tile a press of the tool in hand would lay under the chosen entity, if it would
     /// lay one: the tool is the place tool or a brush that puts entities down.
     fn floor_in_hand(&self) -> Option<String> {
-        let brush = matches!(self.tool, Tool::Place | Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle);
+        let brush = matches!(self.tool, Tool::Place | Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon);
         self.chosen_prototype().filter(|_| brush).and_then(|prototype| self.floor_for(prototype))
     }
 
