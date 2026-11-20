@@ -26,6 +26,7 @@ use crate::links::{EntityPorts, LinkMirror, LinksAnswer, Ports, PortsJson};
 use crate::loading::{Loading, Step};
 use crate::locale::Locale;
 use crate::model::{cells_between, share_names, Container, DecalPrototype, Delta, Doc, EngineTiming, Entity, EntityContainers, Prototype, SceneJson, SPACE};
+use crate::draw_depths::{DepthGroups, DrawDepth};
 use crate::renderer::{group, group_of, Camera, GridLines};
 use crate::textures::BakedTextures;
 
@@ -722,8 +723,9 @@ impl Session {
                     }
                     self.set_status(format!("Not opened: {}", error.lines().next().unwrap_or("")));
                 }
-                FromEngine::Ready { document_kernel_ms, view_kernel_ms, warm_up_ms, tiles, prototypes, decal_prototypes, ports } => {
+                FromEngine::Ready { document_kernel_ms, view_kernel_ms, warm_up_ms, tiles, prototypes, decal_prototypes, ports, depths } => {
                     self.ports = ports;
+                    self.lists.depths = depths;
                     self.engine_ready_ms = Some(self.started.elapsed().as_millis() as u64);
                     self.warm_up_ms = Some(warm_up_ms);
                     self.set_status(format!(

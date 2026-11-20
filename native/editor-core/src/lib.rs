@@ -8,6 +8,7 @@ pub mod air_checks;
 pub mod air_draw;
 pub mod backdrop;
 pub mod colour;
+pub mod draw_depths;
 pub mod drawlist;
 pub mod engine;
 pub mod fields;

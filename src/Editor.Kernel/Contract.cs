@@ -400,6 +400,9 @@ public sealed record EntityPrototypeInfo(
     /// </summary>
     IReadOnlyList<int>? TubeExits = null);
 
+/// <summary>One of the fork's draw depths: its name in the DrawDepth enum and its number.</summary>
+public sealed record DrawDepthInfo(string Name, int Value);
+
 /// <summary>A decal prototype, for the palette.</summary>
 public sealed record DecalPrototypeInfo(
     string Id,

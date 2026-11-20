@@ -683,7 +683,7 @@ impl Session {
         let (origin, moved) = (grid.to_world((0.0, 0.0)), grid.to_world((by.0 as f32, by.1 as f32)));
         let (dx, dy) = (moved.0 - origin.0, moved.1 - origin.1);
         let hidden = self.layers.hidden_mask();
-        for item in entities.iter().filter_map(|uid| list.items.get(uid)).filter(|item| hidden & (1 << group_of(item.kind, item.depth)) == 0) {
+        for item in entities.iter().filter_map(|uid| list.items.get(uid)).filter(|item| hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0) {
             for quad in item.quads.chunks_exact(FLOATS_PER_QUAD) {
                 for corner in quad[..8].chunks_exact(2) {
                     over.extend_from_slice(&[corner[0] + dx, corner[1] + dy]);

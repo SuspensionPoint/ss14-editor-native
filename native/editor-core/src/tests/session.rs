@@ -118,6 +118,7 @@ fn the_engine_being_ready_fills_the_palettes() {
         // One the game keeps out of its own menu is kept as well.
         decal_prototypes: vec![DecalPrototype { id: "Arrows".into(), show_menu: true, ..Default::default() }, DecalPrototype { id: "Hidden".into(), ..Default::default() }],
         ports: Ports::default(),
+        depths: DepthGroups::default(),
     };
     answers.send(ready).ok().expect("a session to send to");
     assert!(session.pump((640, 640)));
@@ -126,6 +127,33 @@ fn the_engine_being_ready_fills_the_palettes() {
     assert_eq!((session.tiles.len(), ids(&session.decal_prototypes)), (1, vec!["Arrows".to_owned(), "Hidden".to_owned()]));
     let prototypes: Vec<(&str, bool)> = session.prototypes().iter().map(|prototype| (prototype.id.as_str(), prototype.placeable())).collect();
     assert_eq!(prototypes, [("MarkerHidden", false), ("Table", true)]);
+}
+
+#[test]
+fn the_engine_being_ready_sorts_draw_depths_by_the_fork_s_names() {
+    let (to_engine, _asked) = mpsc::channel();
+    let (answers, from_engine) = mpsc::channel();
+    let mut session = Session::with_channels(to_engine, from_engine, Arc::new(AtomicU64::new(0)), String::new());
+    // Until the engine tells them, Starlight's: its walls at -2 are Structures.
+    assert_eq!(group_of(crate::drawlist::KIND_ENTITY, -2, &session.lists.depths), group::STRUCTURES);
+
+    // Space Wizards draw walls at -8, below their wall tops.
+    let named = |name: &str, value: i32| DrawDepth { name: name.into(), value };
+    let depths = DepthGroups::from_depths(&[named("BelowFloor", -15), named("Puddles", -12), named("SmallMobs", -9), named("Walls", -8), named("WallTops", -1), named("Objects", 0)]);
+    let ready = FromEngine::Ready {
+        document_kernel_ms: 0,
+        view_kernel_ms: 0,
+        warm_up_ms: 0,
+        tiles: Vec::new(),
+        prototypes: Vec::new(),
+        decal_prototypes: Vec::new(),
+        ports: Ports::default(),
+        depths,
+    };
+    answers.send(ready).ok().expect("a session to send to");
+    assert!(session.pump((640, 640)));
+    assert_eq!(group_of(crate::drawlist::KIND_ENTITY, -8, &session.lists.depths), group::STRUCTURES);
+    assert_eq!(group_of(crate::drawlist::KIND_ENTITY, -12, &session.lists.depths), group::FLOOR_OBJECTS);
 }
 
 #[test]
@@ -145,7 +173,7 @@ fn what_the_engine_reports_moves_the_load_on_and_a_map_that_will_not_open_fails_
     session.map_drawn();
     assert_eq!(current(&session), Some(Step::Prototypes));
 
-    send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default() });
+    send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default(), depths: DepthGroups::default() });
     send(FromEngine::NotOpened("Could not find file 'Bagel.yml'.\n   at somewhere".into()));
     session.pump((640, 640));
     let loading = session.loading.as_ref().unwrap();
@@ -185,7 +213,7 @@ fn started_with_a_map() -> (Session, mpsc::Sender<FromEngine>, mpsc::Receiver<To
     for step in [Step::Runtime, Step::Kernels] {
         answers.send(FromEngine::Reached(step)).ok().expect("a session to send to");
     }
-    answers.send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default() }).ok().expect("a session to send to");
+    answers.send(FromEngine::Ready { document_kernel_ms: 0, view_kernel_ms: 0, warm_up_ms: 0, tiles: Vec::new(), prototypes: Vec::new(), decal_prototypes: Vec::new(), ports: Ports::default(), depths: DepthGroups::default() }).ok().expect("a session to send to");
     answer_open(&mut session, &answers);
     assert!(fades_away(&session));
     session.loading_done();
@@ -262,6 +290,7 @@ fn the_session_finds_a_prototype_by_its_id() {
         prototypes: vec![named("Chair", "chair", false), named("MarkerHidden", "marker", true), named("Table", "table", false)],
         decal_prototypes: Vec::new(),
         ports: Ports::default(),
+        depths: DepthGroups::default(),
     };
     answers.send(ready).ok().expect("a session to send to");
     assert!(session.pump((640, 640)));

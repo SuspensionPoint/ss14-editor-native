@@ -192,7 +192,7 @@ impl Session {
         let mut near: Vec<(i32, u32, f32, i32, (f32, f32))> = list
             .items
             .iter()
-            .filter(|(&id, item)| id > 0 && hidden & (1 << group_of(item.kind, item.depth)) == 0)
+            .filter(|(&id, item)| id > 0 && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
             .filter_map(|(&id, item)| {
                 let (l, b, r, t) = quads_bounds(&item.quads)?;
                 let middle = ((l + r) / 2.0, (b + t) / 2.0);
@@ -308,7 +308,7 @@ impl Session {
         let mut found: Vec<i32> = document
             .items
             .iter()
-            .filter(|(&id, item)| id > 0 && !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth)) == 0)
+            .filter(|(&id, item)| id > 0 && !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
             .filter(|(&id, _)| {
                 self.entity_bounds(id).is_some_and(|(l, b, r, t)| {
                     let (x, y) = ((l + r) / 2.0, (b + t) / 2.0);

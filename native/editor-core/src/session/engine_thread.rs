@@ -51,7 +51,9 @@ pub(super) enum FromEngine {
     Textures(Arc<BakedTextures>),
     /// A map would not open, with the engine's error. The open document stays.
     NotOpened(String),
-    Ready { document_kernel_ms: u64, view_kernel_ms: u64, warm_up_ms: u64, tiles: Vec<Tile>, prototypes: Vec<Prototype>, decal_prototypes: Vec<DecalPrototype>, ports: Ports },
+    /// The engine is up, with what it tells once: the fork's tiles, prototypes, decals and
+    /// ports, and the layer of each of its draw depths.
+    Ready { document_kernel_ms: u64, view_kernel_ms: u64, warm_up_ms: u64, tiles: Vec<Tile>, prototypes: Vec<Prototype>, decal_prototypes: Vec<DecalPrototype>, ports: Ports, depths: DepthGroups },
     /// A map opened, with its links as the engine listed them, or why it would not.
     Opened { scene: Box<SceneJson>, list: Vec<u8>, timing: EngineTiming, path: Option<String>, links: Result<LinksAnswer, String> },
     Changed { list: Option<Vec<u8>>, delta: Option<Box<Delta>>, what: &'static str, seq: u64, asked: Instant, timing: Timing },
@@ -249,6 +251,8 @@ pub(super) fn engine_thread(
     // The ports are static, and asked once. An engine that does not tell them leaves none,
     // and links can still be made with the ports `ports.of` tells.
     let ports = engine.call::<PortsJson>("ports", &json!({})).map(Ports::from_json).unwrap_or_default();
+    // An engine that does not tell its draw depths leaves Starlight's.
+    let depths = engine.call::<Vec<DrawDepth>>("drawdepths", &json!({})).map(|depths| DepthGroups::from_depths(&depths)).unwrap_or_default();
     send(FromEngine::Ready {
         document_kernel_ms: ready["documentKernelMs"].as_u64().unwrap_or(0),
         view_kernel_ms: ready["viewKernelMs"].as_u64().unwrap_or(0),
@@ -257,6 +261,7 @@ pub(super) fn engine_thread(
         prototypes,
         decal_prototypes,
         ports,
+        depths,
     });
 
     let mut document: Option<i32> = None;

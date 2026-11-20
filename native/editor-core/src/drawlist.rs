@@ -194,6 +194,8 @@ pub struct Applied {
 pub struct DrawLists {
     /// Texture ids stay valid for as long as the engine runs, so this only ever grows.
     pub textures: HashMap<u32, TextureSource>,
+    /// The layer switch of each draw depth, by the fork's names for them.
+    pub depths: crate::draw_depths::DepthGroups,
     pub documents: HashMap<i32, Document>,
     next_version: u64,
     local: HashMap<(String, u32), u32>,
