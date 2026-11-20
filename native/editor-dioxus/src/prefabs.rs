@@ -137,7 +137,7 @@ pub(crate) fn PrefabPalette() -> Element {
 
     rsx! {
         div { class: "flex flex-col flex-1 overflow-hidden",
-            div { class: "px-2 pt-2 pb-1 text-[10px] text-muted", "In {folder}" }
+            div { class: "px-2 pt-2 pb-1 text-[11px] text-muted", "In {folder}" }
             div { class: "flex gap-1 p-2 border-b border-subtle",
                 TextField { value: search, placeholder: "Search prefabs...", oninput: move |text: String| { with(|editor| editor.prefabs.search = text); bump(); } }
                 button { class: "px-2 py-1 bg-elevated border border-subtle rounded-sm text-primary text-xs cursor-pointer hover:bg-hover",
@@ -179,7 +179,7 @@ pub(crate) fn PrefabPalette() -> Element {
                     }
                 }
             }
-            div { class: "px-2 py-1 text-[10px] text-muted border-t border-subtle", "{shown} of {total} prefabs" }
+            div { class: "px-2 py-1 text-[11px] text-muted border-t border-subtle", "{shown} of {total} prefabs" }
         }
     }
 }
@@ -201,9 +201,9 @@ fn PrefabLine(row: PrefabRow) -> Element {
             }
             div { class: "flex-1 overflow-hidden",
                 div { class: if picked { "text-accent text-xs truncate" } else { "text-primary text-xs truncate" }, "{title}" }
-                div { class: "text-[10px] truncate", style: if readable { "color: #888888;" } else { "color: #f87171;" }, "{detail}" }
+                div { class: "text-[11px] truncate", style: if readable { "color: #888888;" } else { "color: #f87171;" }, "{detail}" }
             }
-            button { class: "px-2 py-1 bg-elevated border border-subtle rounded-sm text-primary text-[10px] cursor-pointer hover:bg-hover",
+            button { class: "px-2 py-1 bg-elevated border border-subtle rounded-sm text-primary text-[11px] cursor-pointer hover:bg-hover",
                 onclick: move |event| {
                     event.stop_propagation();
                     with(|editor| editor.prefabs.deleting = Some(delete.clone()));
@@ -246,7 +246,7 @@ pub(crate) fn GridPalette() -> Element {
                 }
             }
             if let Some(why) = refused.clone() {
-                div { class: "px-2 py-1 text-[10px] text-muted", "{why}" }
+                div { class: "px-2 py-1 text-[11px] text-muted", "{why}" }
             }
             div { class: "flex-1 overflow-y-auto",
                 if rows.is_empty() {
@@ -263,12 +263,12 @@ pub(crate) fn GridPalette() -> Element {
                                     onclick: move |_| { with(|editor| editor.session.centre_on_grid(uid)); bump(); },
                                     "{label}"
                                 }
-                                span { class: "text-[10px] text-muted whitespace-nowrap", "{tiles}" }
-                                button { class: "px-2 py-0.5 bg-elevated border border-subtle rounded-sm text-primary text-[10px] cursor-pointer hover:bg-hover",
+                                span { class: "text-[11px] text-muted whitespace-nowrap", "{tiles}" }
+                                button { class: "px-2 py-0.5 bg-elevated border border-subtle rounded-sm text-primary text-[11px] cursor-pointer hover:bg-hover",
                                     onclick: move |_| { with(|editor| editor.grids.renaming = Some((uid, name.clone()))); bump(); },
                                     "Rename"
                                 }
-                                button { class: "px-2 py-0.5 bg-elevated border border-subtle rounded-sm text-primary text-[10px] cursor-pointer hover:bg-hover",
+                                button { class: "px-2 py-0.5 bg-elevated border border-subtle rounded-sm text-primary text-[11px] cursor-pointer hover:bg-hover",
                                     disabled: !enabled || ground,
                                     title: if ground { MAP_GROUND } else { "" },
                                     onclick: move |_| {

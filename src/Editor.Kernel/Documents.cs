@@ -31,7 +31,7 @@ namespace SS14.EditorKernel;
 /// Every edit is an engine operation, the scene the interface shows is read back from the engine,
 /// and saving uses the game's own serializer. Nothing here builds or parses map YAML by hand.
 /// </summary>
-public sealed class DocumentManager
+public sealed partial class DocumentManager
 {
     private readonly IEntityManager _entMan;
     private readonly ITileDefinitionManager _tiles;
@@ -175,7 +175,9 @@ public sealed class DocumentManager
     private sealed record PresenceChange(EntityUid Uid, Placement Placement, bool Created, Held? Held = null) : Change;
     private sealed record PlacementChange(EntityUid Uid, Placement Old, Placement New) : Change;
     private sealed record NameChange(EntityUid Uid, string? Old, string? New) : Change;
+#if !FORK_DECAL_CHUNK_ENTITIES
     private sealed record DecalEdit(EntityUid Grid, uint Id, Decal? Old, Decal? New) : Change;
+#endif
     private sealed record ComponentsChange(EntityUid Uid, List<ComponentSnapshot> Components) : Change;
     /// <summary>The Joint component of one body, whole, around the leaving that cleared its joints.</summary>
     private sealed record JointsChange(EntityUid Uid, MappingDataNode Before, MappingDataNode? After) : Change;
@@ -272,6 +274,10 @@ public sealed class DocumentManager
             }
         }
 
+#if FORK_DECAL_CHUNK_ENTITIES
+        StartDecals(mapUid);
+#endif
+
         var document = new Document
         {
             Id = _nextId++,
@@ -325,6 +331,9 @@ public sealed class DocumentManager
         _entMan.CullRemovedComponents();
         _documents.Remove(documentId);
         _byMap.Remove(document.Map);
+#if FORK_DECAL_CHUNK_ENTITIES
+        ForgetDecalNumbers();
+#endif
         _touched.Clear();
         _destroyed.Clear();
     }
@@ -427,17 +436,18 @@ public sealed class DocumentManager
         }
 
         var decals = new List<SceneDecal>();
+#if FORK_DECAL_CHUNK_ENTITIES
+        decals.AddRange(ChunkDecals(uid));
+#else
         if (_entMan.TryGetComponent(uid, out DecalGridComponent? decalGrid))
         {
             foreach (var chunk in decalGrid.ChunkCollection.ChunkCollection.Values)
             foreach (var (id, decal) in chunk.Decals)
-                decals.Add(DescribeDecal(id, decal));
+                decals.Add(DescribeDecal(id, decal, id));
         }
 
-#if FORK_DECAL_CHUNK_ENTITIES
-        decals.AddRange(ChunkDecals(uid));
-#endif
         decals.Sort((a, b) => a.Id.CompareTo(b.Id));
+#endif
 
         return new SceneGrid(
             uid.Id,
@@ -451,7 +461,8 @@ public sealed class DocumentManager
             decals);
     }
 
-    private static SceneDecal DescribeDecal(uint id, Decal decal) => new(
+    /// <param name="order">Where the game draws it among the decals of its z-index (SceneDecal.Order).</param>
+    private static SceneDecal DescribeDecal(uint id, Decal decal, long order) => new(
         (int) id,
         decal.Id,
         decal.Coordinates.X,
@@ -459,7 +470,8 @@ public sealed class DocumentManager
         decal.Color?.ToHex(),
         decal.Angle.Theta,
         decal.ZIndex,
-        decal.Cleanable);
+        decal.Cleanable,
+        order);
 
     // ---- decals ----
     //
@@ -468,45 +480,10 @@ public sealed class DocumentManager
     // state). These few lines are that system's TryAddDecal and RemoveDecal with the same rules:
     // a known decal prototype, on a tile that is not space, filed under its 32-tile chunk.
     //
-    // A fork that keeps its decals on chunk entities of the grid (src/Directory.Build.props) has
-    // none in that component. Its decals are read from the chunk entities and shown
-    // (ChunkDecals), but an edit of one is refused. The chunk entities are loaded and saved as
-    // they are, with their decals.
+    // A fork that keeps its decals on chunk entities of the grid (src/Directory.Build.props)
+    // has its own version of these in ChunkDecals.cs, by the rules of that fork's decal system.
 
-#if FORK_DECAL_CHUNK_ENTITIES
-    /// <summary>
-    /// A grid's decals as the Space Wizards keep them: on chunk entities rooted on the grid
-    /// (Robust.Shared/GameStates/ChunkEntityComponent.cs), each with the decals of its chunk by
-    /// an id of their own (Content.Shared/Decals/DecalChunkComponent.cs). A decal is numbered by
-    /// its chunk's place among the grid's chunks, by x and then y, from one, times 65536, plus
-    /// its id in the chunk. The numbers then order the decals as the game's DecalOverlay does
-    /// after their z-index (Content.Client/Decals/Overlays/DecalOverlay.cs CompareDecalIndex),
-    /// and stay apart from those a grid may still keep in its load-only DecalGridComponent.
-    /// </summary>
-    private IEnumerable<SceneDecal> ChunkDecals(EntityUid grid)
-    {
-        var chunks = new List<(Vector2i Chunk, DecalChunkComponent Decals)>();
-        var query = _entMan.AllEntityQueryEnumerator<Robust.Shared.GameStates.ChunkEntityComponent, DecalChunkComponent>();
-        while (query.MoveNext(out _, out var chunk, out var decals))
-        {
-            if (chunk.Root == grid)
-                chunks.Add((chunk.Chunk, decals));
-        }
-
-        chunks.Sort((a, b) => a.Chunk.X != b.Chunk.X ? a.Chunk.X.CompareTo(b.Chunk.X) : a.Chunk.Y.CompareTo(b.Chunk.Y));
-        for (var i = 0; i < chunks.Count; i++)
-        {
-            foreach (var (id, decal) in chunks[i].Decals.Decals)
-                yield return DescribeDecal((uint) ((i + 1) * 65536 + id), decal);
-        }
-    }
-
-    private const string DecalsOnChunks = "This fork keeps its decals on chunk entities of the grid, which the editor cannot edit yet. They are kept as they are when the map is saved.";
-
-    private static Decal? FindDecal(EntityUid grid, uint id) => throw new KernelException(DecalsOnChunks);
-
-    private static void SetDecal(EntityUid grid, uint id, Decal? decal) => throw new KernelException(DecalsOnChunks);
-#else
+#if !FORK_DECAL_CHUNK_ENTITIES
     private Decal? FindDecal(EntityUid grid, uint id)
     {
         if (!_entMan.TryGetComponent(grid, out DecalGridComponent? comp))
@@ -519,6 +496,24 @@ public sealed class DocumentManager
         }
 
         return null;
+    }
+
+    /// <summary>The number a new decal of the grid gets, as the game's decal system gives it.</summary>
+    private uint NewDecalId(EntityUid grid) => _entMan.EnsureComponent<DecalGridComponent>(grid).ChunkCollection.NextDecalId++;
+
+    /// <summary>Changes, adds or (with no <paramref name="decal"/>) removes a decal, and returns the change for undo.</summary>
+    private DecalEdit EditDecal(EntityUid grid, uint id, Decal? old, Decal? decal, List<DecalChange> report)
+    {
+        var change = new DecalEdit(grid, id, old, decal);
+        ApplyDecal(change, forward: true, report);
+        return change;
+    }
+
+    private void ApplyDecal(DecalEdit change, bool forward, List<DecalChange> report)
+    {
+        var now = forward ? change.New : change.Old;
+        SetDecal(change.Grid, change.Id, now);
+        report.Add(new DecalChange(change.Grid.Id, (int) change.Id, now == null ? null : DescribeDecal(change.Id, now, change.Id)));
     }
 
     private void SetDecal(EntityUid grid, uint id, Decal? decal)
@@ -927,9 +922,13 @@ public sealed class DocumentManager
         var pendingTiles = new Dictionary<EntityUid, List<(Vector2i Index, Tile Old, Tile New)>>();
         var pendingAir = new Dictionary<EntityUid, List<(Vector2i From, Vector2i? To)>>();
         var pendingFix = new List<EntityUid>();
+        var rebased = new List<(int At, DecalEdit Edit)>();
 
         try
         {
+        if (merge && document.Undo.Count > 0)
+            rebased = RebaseDecals(document, document.Undo[^1].Changes, ops, decalChanges);
+
         foreach (var op in ops)
         {
             switch (op.Kind)
@@ -1194,12 +1193,6 @@ public sealed class DocumentManager
                     changes.Add(new NameChange(uid, old, NameOverride(meta)));
                     break;
                 }
-#if FORK_DECAL_CHUNK_ENTITIES
-                case "decal":
-                case "decal.update":
-                case "decal.remove":
-                    throw new KernelException(DecalsOnChunks);
-#else
                 case "decal":
                 case "decal.update":
                 {
@@ -1210,13 +1203,11 @@ public sealed class DocumentManager
                     var decal = BuildDecal(gridUid, op, old);
                     if (op.Kind == "decal")
                     {
-                        id = _entMan.EnsureComponent<DecalGridComponent>(gridUid).ChunkCollection.NextDecalId++;
+                        id = NewDecalId(gridUid);
                         createdDecals.Add((int) id);
                     }
 
-                    var change = new DecalEdit(gridUid, id, old, decal);
-                    ApplyDecal(change, forward: true, decalChanges);
-                    changes.Add(change);
+                    changes.Add(EditDecal(gridUid, id, old, decal, decalChanges));
                     break;
                 }
                 case "decal.remove":
@@ -1224,12 +1215,9 @@ public sealed class DocumentManager
                     var gridUid = Owned(document, op.Grid);
                     var id = (uint) op.Uid;
                     var old = FindDecal(gridUid, id) ?? throw new KernelException($"Decal {id} does not exist.");
-                    var change = new DecalEdit(gridUid, id, old, null);
-                    ApplyDecal(change, forward: true, decalChanges);
-                    changes.Add(change);
+                    changes.Add(EditDecal(gridUid, id, old, null, decalChanges));
                     break;
                 }
-#endif
                 default:
                     throw new KernelException($"Unknown edit kind '{op.Kind}'.");
             }
@@ -1255,6 +1243,7 @@ public sealed class DocumentManager
         {
             // An edit is all or nothing: put back whatever part of it had already happened.
             Rollback(document, changes, createdUids);
+            UnrebaseDecals(document.Undo, rebased);
             throw;
         }
 
@@ -1425,11 +1414,60 @@ public sealed class DocumentManager
         return next * quarter + rest;
     }
 
-    private void ApplyDecal(DecalEdit change, bool forward, List<DecalChange> report)
+    /// <summary>
+    /// A drag or a turn sends where its decals are now on every frame, merged into one step. The
+    /// decals' changes of the frames before are undone first, so the step takes each decal from
+    /// where the stroke began to where it is now. A decal dragged over a chunk and back then
+    /// leaves the chunks as they were, where on a fork that keeps its decals on chunk entities
+    /// each frame's move would have taken ids and made and dropped chunk entities on the way.
+    /// Only a run of decal changes at the end of the step goes, each of a decal this edit
+    /// changes again, and only changes of a decal that was there before and is still there.
+    /// Changes of other kinds are passed over, since a decal's change touches nothing of theirs.
+    /// </summary>
+    /// <returns>The changes undone, each with where it was in the step, last first.</returns>
+    private List<(int At, DecalEdit Edit)> RebaseDecals(Document document, List<Change> step, IReadOnlyList<EditOp> ops, List<DecalChange> report)
     {
-        var now = forward ? change.New : change.Old;
-        SetDecal(change.Grid, change.Id, now);
-        report.Add(new DecalChange(change.Grid.Id, (int) change.Id, now == null ? null : DescribeDecal(change.Id, now)));
+        var undone = new List<(int At, DecalEdit Edit)>();
+        var again = new HashSet<(EntityUid Grid, uint Id)>();
+        foreach (var op in ops)
+        {
+            if (op.Kind == "decal.update")
+                again.Add((Owned(document, op.Grid), (uint) op.Uid));
+        }
+
+        if (again.Count == 0)
+            return undone;
+
+        for (var i = step.Count - 1; i >= 0; i--)
+        {
+            if (step[i] is not DecalEdit edit)
+                continue;
+
+            if (edit.Old == null || edit.New == null || !again.Contains((edit.Grid, edit.Id)))
+                break;
+
+            undone.Add((i, edit));
+        }
+
+        foreach (var (at, edit) in undone)
+        {
+            ApplyDecal(edit, forward: false, report);
+            step.RemoveAt(at);
+        }
+
+        return undone;
+    }
+
+    /// <summary>The decal changes RebaseDecals undid done again and put back in their step, for an edit that failed.</summary>
+    private void UnrebaseDecals(List<Step> undo, List<(int At, DecalEdit Edit)> rebased)
+    {
+        var discard = new List<DecalChange>();
+        for (var i = rebased.Count - 1; i >= 0; i--)
+        {
+            var (at, edit) = rebased[i];
+            ApplyDecal(edit, forward: true, discard);
+            undo[^1].Changes.Insert(at, edit);
+        }
     }
 
     private void Rollback(Document document, List<Change> changes, List<EntityUid> created)

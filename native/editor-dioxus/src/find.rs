@@ -115,7 +115,7 @@ fn Find() -> Element {
                                 class: if index == current { "flex items-center gap-2 w-full px-3 py-1.5 text-left border-none cursor-pointer text-xs bg-active text-accent" } else { "flex items-center gap-2 w-full px-3 py-1.5 text-left border-none cursor-pointer text-xs bg-transparent text-primary hover:bg-hover" },
                                 onclick: move |_| { with(|editor| jump(editor, uid)); bump(); },
                                 span { class: "flex-1 truncate", "{text}" }
-                                span { class: "text-muted text-[10px]", "{place}" }
+                                span { class: "text-muted text-[11px]", "{place}" }
                             }
                         }
                     }

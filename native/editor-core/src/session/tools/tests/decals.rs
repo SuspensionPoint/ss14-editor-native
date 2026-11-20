@@ -124,13 +124,13 @@ fn the_scene_with_decals_puts_them_in_the_mirror() {
 
 #[test]
 fn choosing_a_decal_keeps_a_brush_and_takes_paint_from_any_other_tool() {
-    for ToolEntry { tool, .. } in Tool::ALL {
+    for tool in Tool::EVERY {
         let (mut session, _engine) = with_decals();
         session.set_tool(tool);
         session.choose_decal("Arrows");
 
         assert_eq!((session.palette(), session.chosen_decal()), (&Palette::Decal("Arrows".into()), Some("Arrows")), "{tool:?}");
-        let kept = matches!(tool, Tool::Paint | Tool::Erase | Tool::Rectangle | Tool::Line | Tool::Circle);
+        let kept = matches!(tool, Tool::Paint | Tool::Erase | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon);
         assert_eq!(session.tool(), if kept { tool } else { Tool::Paint }, "{tool:?}");
         // Nothing else is chosen any more.
         assert_eq!((session.chosen_tile(), session.chosen_entity()), (None, None), "{tool:?}");
@@ -152,9 +152,8 @@ fn a_decal_chosen_gives_way_to_a_tile_or_an_entity_chosen_after_it() {
 #[test]
 fn a_choice_of_a_decal_answers_a_hint() {
     let (mut session, _engine) = with_decals();
-    session.set_tool(Tool::Fill);
     choose(&mut session, "SnapgridCenter");
-    session.set_tool(Tool::Fill);
+    session.set_tool(Tool::Room);
     session.pointer_down(over(&session, (0, 0)), VIEW, Button::Primary);
     assert_eq!(session.status_line(), "Choose a tile to paint");
 
@@ -196,7 +195,9 @@ fn the_decal_search_matches_every_word_in_the_id_in_either_case() {
 #[test]
 fn placement_settings_start_as_the_web_editor_s_and_keep_the_angle_within_a_turn() {
     let (mut session, _engine) = with_decals();
-    assert_eq!(session.decal_settings(), &DecalSettings { color: None, angle: 0.0, z_index: 0, snap: true, cleanable: false });
+    assert_eq!(session.decal_settings(), &DecalSettings { color: None, angle: 0.0, z_index: 0, cleanable: false });
+    // Decals go on cells until Free is chosen, as entities do.
+    assert!(!session.place_free());
 
     session.set_decal_settings(DecalSettings { angle: -std::f64::consts::FRAC_PI_2, z_index: 3, ..Default::default() });
     let settings = session.decal_settings();
@@ -220,7 +221,7 @@ fn a_decal_colour_reads_and_writes_as_the_engine_has_it() {
 #[test]
 fn a_stroke_of_paint_puts_a_decal_on_the_corner_of_each_cell_as_one_step() {
     let (mut session, engine) = with_decals();
-    let settings = DecalSettings { color: Some("#FF000080".into()), angle: 0.5, z_index: 2, snap: true, cleanable: true };
+    let settings = DecalSettings { color: Some("#FF000080".into()), angle: 0.5, z_index: 2, cleanable: true };
     session.set_decal_settings(settings);
     session.choose_decal("Arrows");
     drag(&mut session, (0, 4), (2, 4));
@@ -250,10 +251,10 @@ fn a_cell_crossed_twice_in_one_stroke_gets_one_decal() {
 }
 
 #[test]
-fn paint_with_snap_off_or_shift_puts_one_decal_with_its_middle_on_the_cursor() {
+fn paint_with_free_or_shift_puts_one_decal_with_its_middle_on_the_cursor() {
     for (snap, shift) in [(false, false), (true, true)] {
         let (mut session, engine) = with_decals();
-        session.set_decal_settings(DecalSettings { snap, ..Default::default() });
+        session.set_place_free(!snap);
         session.choose_decal("Grass");
         session.held.shift = shift;
         session.pointer_down(at(&session, (2.25, 3.75)), VIEW, Button::Primary);
@@ -271,7 +272,7 @@ fn paint_with_snap_off_or_shift_puts_one_decal_with_its_middle_on_the_cursor() {
 #[test]
 fn a_free_decal_whose_corner_has_no_tile_is_not_asked_for() {
     let (mut session, engine) = with_decals();
-    session.set_decal_settings(DecalSettings { snap: false, ..Default::default() });
+    session.set_place_free(true);
     session.choose_decal("Grass");
     // The corner is half a cell below and left of the cursor, off the floor.
     click(&mut session, (0.25, 2.5));
@@ -289,7 +290,7 @@ fn the_shapes_put_decals_one_to_a_cell_with_a_tile_as_one_edit() {
         assert_eq!(session.tool(), tool);
         // From cell (4, 4) towards space beyond the floor's edge at 5, and the shapes keep to
         // cells whatever the settings say.
-        session.set_decal_settings(DecalSettings { snap: false, ..Default::default() });
+        session.set_place_free(true);
         drag(&mut session, (4, 4), to);
 
         let edits = edits(&engine);
@@ -302,8 +303,9 @@ fn the_shapes_put_decals_one_to_a_cell_with_a_tile_as_one_edit() {
 }
 
 #[test]
-fn the_eraser_with_a_decal_chosen_removes_only_that_prototype_s_decals_on_the_cells_it_crosses() {
+fn the_eraser_with_only_on_removes_only_that_prototype_s_decals_on_the_cells_it_crosses() {
     let (mut session, engine) = decals_on_map(&[(1, "Arrows", (1.0, 4.0)), (2, "Grass", (1.0, 4.0)), (3, "Arrows", (2.5, 4.25)), (4, "Arrows", (5.0, 5.0))]);
+    session.set_erase_only(true);
     session.set_tool(Tool::Erase);
     session.choose_decal("Arrows");
     assert_eq!(session.tool(), Tool::Erase);
@@ -337,19 +339,20 @@ fn the_ghost_of_the_chosen_decal_is_where_a_press_would_put_it() {
     assert!((first.0 - 3.0).abs() < 1e-5 && (first.1 - 3.0).abs() < 1e-5, "{first:?}");
 
     // Placed freely, its middle is on the cursor.
-    session.set_decal_settings(DecalSettings { snap: false, ..Default::default() });
+    session.set_decal_settings(DecalSettings::default());
+    session.set_place_free(true);
     let (_, over) = session.overlay_quads();
     assert!((over[0] - 2.1).abs() < 1e-5 && (over[1] - 2.8).abs() < 1e-5, "{:?}", &over[..2]);
 }
 
 #[test]
 fn only_the_tools_that_put_a_decal_down_show_its_ghost() {
-    for ToolEntry { tool, .. } in Tool::ALL {
+    for tool in Tool::EVERY {
         let (mut session, _engine) = with_decals();
         session.choose_decal("Arrows");
         session.set_tool(tool);
         session.pointer_move(at(&session, (2.5, 3.5)), VIEW);
-        let shows = matches!(tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle);
+        let shows = matches!(tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon);
         assert_eq!(session.overlay_quads().1.len(), if shows { FLOATS_PER_QUAD } else { 0 }, "{tool:?}");
     }
 
@@ -358,4 +361,35 @@ fn only_the_tools_that_put_a_decal_down_show_its_ghost() {
     session.choose_decal("Grass");
     session.pointer_move(at(&session, (2.5, 3.5)), VIEW);
     assert!(session.overlay_quads().1.is_empty());
+}
+
+#[test]
+fn a_stroke_or_a_shape_of_decals_skips_cells_that_hold_one_already_and_a_click_stacks() {
+    let (mut session, engine) = decals_on_map(&[(1, "Grass", (2.0, 4.0))]);
+    session.choose_decal("Grass");
+    assert_eq!(session.tool(), Tool::Paint);
+    // From (1, 4) over (2, 4), which holds grass, to (3, 4).
+    drag(&mut session, (1, 4), (3, 4));
+    assert_eq!(corners(&edits(&engine).iter().flat_map(|edit| edit.2.clone()).collect::<Vec<_>>()), [("decal", 1.0, 4.0), ("decal", 3.0, 4.0)]);
+
+    // A click on it puts another on top.
+    click(&mut session, (2.5, 4.5));
+    assert_eq!(corners(&asked(&engine).concat()), [("decal", 2.0, 4.0)]);
+
+    // So does a press that begins a stroke, but a rectangle skips it.
+    session.set_tool(Tool::Rectangle);
+    drag(&mut session, (1, 4), (2, 4));
+    assert_eq!(corners(&asked(&engine).concat()), [("decal", 1.0, 4.0)]);
+}
+
+#[test]
+fn fill_with_a_decal_puts_one_on_each_cell_of_the_floor() {
+    let (mut session, engine) = decals_on_map(&[(1, "Grass", (2.0, 4.0))]);
+    session.set_tool(Tool::Fill);
+    session.choose_decal("Grass");
+    assert_eq!(session.tool(), Tool::Fill);
+    click(&mut session, (0.5, 0.5));
+    let edits = edits(&engine);
+    assert_eq!(labels(&edits), ["Fill decals"]);
+    assert_eq!(edits[0].2.len(), 35);
 }

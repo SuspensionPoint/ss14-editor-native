@@ -578,7 +578,7 @@ fn RegionMenu(x: f32, y: f32, entries: Vec<editor_core::session::MenuEntry>) -> 
                         }
                     },
                     span { class: "flex-1", "{entry.label}" }
-                    span { class: "text-muted ml-4 text-[10px]", "{entry.shortcut}" }
+                    span { class: "text-muted ml-4 text-[11px]", "{entry.shortcut}" }
                 }
             }
         }
@@ -746,6 +746,13 @@ impl Widget for MapWidget {
     }
 }
 
+/// An open line through the points.
+fn open_line(points: &[(f32, f32)]) -> BezPath {
+    let mut path = polygon(points);
+    path.truncate(path.elements().len() - 1);
+    path
+}
+
 /// A closed outline through the points.
 fn polygon(points: &[(f32, f32)]) -> BezPath {
     let mut path = BezPath::new();
@@ -829,6 +836,30 @@ fn draw_over(scene: &mut anyrender::Scene, editor: &mut crate::Editor, scale: f6
             scene.fill(Fill::NonZero, Affine::IDENTITY, fill, None, &shape);
         }
         scene.stroke(&Stroke::new(width(stroke)), Affine::IDENTITY, colour, None, &shape);
+    }
+
+    // Select's shape being drawn, in the colours of a box: filled faintly once it is closed,
+    // and a polygon's first corner ringed, since a click there closes it.
+    if let Some(path) = session.marquee_path() {
+        let points: Vec<(f32, f32)> = path.points.iter().map(|&corner| at(corner)).collect();
+        let (colour, fill) = match path.style {
+            OutlineStyle::DragAdd => (Color::from_rgba8(50, 255, 50, 230), Color::from_rgba8(60, 255, 60, 40)),
+            OutlineStyle::DragTakeAway => (Color::from_rgb8(255, 30, 30), Color::from_rgba8(255, 40, 40, 60)),
+            _ => (rgb(colours::ACCENT), Color::from_rgba8(68, 136, 255, 30)),
+        };
+        if points.len() >= 2 {
+            let shape = if path.closed { polygon(&points) } else { open_line(&points) };
+            if path.closed {
+                scene.fill(Fill::EvenOdd, Affine::IDENTITY, fill, None, &shape);
+            }
+            scene.stroke(&Stroke::new(width(1.5)), Affine::IDENTITY, colour, None, &shape);
+        }
+        if let Some(start) = path.start {
+            let (x, y) = at(start);
+            let ring = kurbo::Circle::new((x as f64, y as f64), width(5.0));
+            scene.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &ring);
+            scene.stroke(&Stroke::new(width(1.5)), Affine::IDENTITY, colour, None, &ring);
+        }
     }
 
     // The faint outline of the cell whose name is shown above it.

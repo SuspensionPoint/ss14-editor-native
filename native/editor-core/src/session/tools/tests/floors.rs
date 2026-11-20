@@ -97,8 +97,8 @@ fn a_rectangle_of_walls_lays_plating_where_there_is_no_tile_in_the_same_edit() {
 #[test]
 fn a_stroke_lays_the_tile_in_the_same_step_and_the_place_tool_too() {
     let (mut session, engine) = knowing_walls();
-    session.set_tool(Tool::Paint);
     session.choose_entity(WALL_SOLID);
+    session.set_tool(Tool::Paint);
     drag(&mut session, (5, 4), (7, 4));
     let stroke = edits(&engine);
     assert!(one_stroke(&stroke));

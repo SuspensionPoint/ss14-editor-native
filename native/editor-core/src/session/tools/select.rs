@@ -23,15 +23,7 @@ pub(in crate::session) struct MoveDrag {
 pub(in crate::session) struct BoxDrag {
     from: (f32, f32),
     to: (f32, f32),
-    mode: BoxMode,
-}
-
-/// What a selection box does with the entities in it when it is let go.
-#[derive(Clone, Copy)]
-enum BoxMode {
-    Replace,
-    Add,
-    TakeAway,
+    mode: SelectMode,
 }
 
 /// What one notch of the wheel turns things by while R is held, in radians: five degrees.
@@ -192,7 +184,7 @@ impl Session {
         let mut near: Vec<(i32, u32, f32, i32, (f32, f32))> = list
             .items
             .iter()
-            .filter(|(&id, item)| id > 0 && hidden & (1 << group_of(item.kind, item.depth)) == 0)
+            .filter(|(&id, item)| id > 0 && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
             .filter_map(|(&id, item)| {
                 let (l, b, r, t) = quads_bounds(&item.quads)?;
                 let middle = ((l + r) / 2.0, (b + t) / 2.0);
@@ -302,23 +294,31 @@ impl Session {
 
     /// Visible entities whose picture's middle is inside a box on the map.
     fn entities_in(&self, a: (f32, f32), b: (f32, f32)) -> Vec<i32> {
+        let (left, right, bottom, top) = (a.0.min(b.0), a.0.max(b.0), a.1.min(b.1), a.1.max(b.1));
+        self.entities_where(|(x, y)| x >= left && x <= right && y >= bottom && y <= top)
+    }
+
+    /// Visible entities whose picture's middle on the map passes a test, in the order of
+    /// their uids. What is on a hidden layer is left out.
+    pub(super) fn entities_where(&self, inside: impl Fn((f32, f32)) -> bool) -> Vec<i32> {
         let Some(document) = self.document.and_then(|id| self.lists.documents.get(&id)) else { return Vec::new() };
         let hidden = self.layers.hidden_mask();
-        let (left, right, bottom, top) = (a.0.min(b.0), a.0.max(b.0), a.1.min(b.1), a.1.max(b.1));
         let mut found: Vec<i32> = document
             .items
             .iter()
-            .filter(|(&id, item)| id > 0 && !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth)) == 0)
-            .filter(|(&id, _)| {
-                self.entity_bounds(id).is_some_and(|(l, b, r, t)| {
-                    let (x, y) = ((l + r) / 2.0, (b + t) / 2.0);
-                    x >= left && x <= right && y >= bottom && y <= top
-                })
-            })
+            .filter(|(&id, item)| id > 0 && !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
+            .filter(|(_, item)| quads_bounds(&item.quads).is_some_and(|(l, b, r, t)| inside(((l + r) / 2.0, (b + t) / 2.0))))
             .map(|(&id, _)| id)
             .collect();
         found.sort_unstable();
         found
+    }
+
+    /// Whether an entity is drawn on a layer that shows.
+    pub(super) fn entity_shown(&self, uid: i32) -> bool {
+        let Some(document) = self.document.and_then(|id| self.lists.documents.get(&id)) else { return false };
+        let hidden = self.layers.hidden_mask();
+        document.items.get(&uid).is_some_and(|item| !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
     }
 
     /// Deletes the selected entities and decals, as one edit.
@@ -355,14 +355,15 @@ impl Session {
         Some((format!("{} entities selected", self.selection.len()), parts.join(", ")))
     }
 
-    /// A quarter turn: of what the place tool places next, of the area tool's region, of the
-    /// ghost of a paste, or else of the selected entities.
+    /// A quarter turn: of what the place tool, a brush or Fill puts down next
+    /// (`turns_placing`), of the area tool's region, of the ghost of a paste, or else of the
+    /// selected entities.
     pub fn rotate(&mut self, clockwise: bool) {
         match self.tool {
-            Tool::Place => self.placing.turn(if clockwise { -std::f64::consts::FRAC_PI_2 } else { std::f64::consts::FRAC_PI_2 }),
+            _ if self.turns_placing() => self.placing.turn(if clockwise { -std::f64::consts::FRAC_PI_2 } else { std::f64::consts::FRAC_PI_2 }),
             Tool::Area | Tool::Select if self.pasting.is_live() => self.turn_paste(clockwise),
             Tool::Area => self.turn_region(clockwise),
-            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Room | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => self.rotate_selection(clockwise),
+            Tool::Pan | Tool::Paint | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon | Tool::Room | Tool::Select | Tool::Place | Tool::Link | Tool::Cable | Tool::Pipe => self.rotate_selection(clockwise),
         }
     }
 
@@ -427,7 +428,7 @@ impl Session {
         hold.wheeled = true;
         hold.notches += notches;
         let whole = hold.notches.round() as i32;
-        if whole != hold.turned && self.tool == Tool::Place {
+        if whole != hold.turned && self.turns_placing() {
             self.placing.turn(f64::from(whole - hold.turned) * NOTCH_TURN);
             hold.turned = whole;
         } else if whole != hold.turned {
@@ -503,37 +504,47 @@ impl Session {
     /// way, as the web editor does (`decals_at`): a plain press selects it alone and begins a
     /// move, Shift adds it or takes it out, and Ctrl takes it out. A move takes the selected
     /// entities and decals along together.
+    ///
+    /// Select's other shapes go through `select_shape_down`.
     pub(super) fn select_down(&mut self, world: (f32, f32), point: (f32, f32)) {
+        if self.select_shape() != SelectShape::Rectangle {
+            self.select_shape_down(world, point);
+            return;
+        }
         // The entity the list is on, while it is the whole selection.
         let stepped = self.stepping.stack.take().map(|stack| stack.entries[stack.current]).filter(|&uid| self.selection == [uid]);
         let (under, stack) = if stepped.is_some() { self.stack_at(world) } else { (self.entities_at(world), Vec::new()) };
-        let entity = stepped.filter(|uid| stack.contains(uid)).or(under.first().copied());
-        let decal = if entity.is_none() { self.decals_at(world).first().copied() } else { None };
+        let targets = self.select_targets();
+        let entity = stepped.filter(|uid| stack.contains(uid)).or(under.first().copied()).filter(|_| targets.entities);
+        let decal = if entity.is_none() && targets.decals { self.decals_at(world).first().copied() } else { None };
+        // Shift adds and Ctrl takes away, as the toolbar's mode does.
+        let mode = self.press_mode();
+        let adds = mode == SelectMode::Add;
         match (entity, decal) {
-            // Ctrl comes first, so that it wins over Shift.
-            (under, decal) if self.held.ctrl => {
+            // Subtract comes first, so that Ctrl wins over Shift.
+            (under, decal) if mode == SelectMode::Subtract => {
                 if let Some(uid) = under {
                     self.selection.retain(|&selected| selected != uid);
                 }
                 if let Some(key) = decal {
                     self.selected_decals.retain(|&selected| selected != key);
                 }
-                self.drag = Drag::SelectBox(BoxDrag { from: world, to: world, mode: BoxMode::TakeAway });
+                self.drag = Drag::SelectBox(BoxDrag { from: world, to: world, mode: SelectMode::Subtract });
             }
-            (Some(uid), _) if self.held.shift && !self.selection.contains(&uid) => self.selection.push(uid),
+            (Some(uid), _) if adds && !self.selection.contains(&uid) => self.selection.push(uid),
             (Some(uid), _) => {
                 let selected = self.selection.contains(&uid);
-                let takes_out = (self.held.shift && selected).then_some(uid);
+                let takes_out = (adds && selected).then_some(uid);
                 if !selected {
                     self.selection = vec![uid];
                     self.selected_decals.clear();
                 }
                 self.begin_move(world, point, takes_out, None);
             }
-            (None, Some(key)) if self.held.shift && !self.selected_decals.contains(&key) => self.selected_decals.push(key),
+            (None, Some(key)) if adds && !self.selected_decals.contains(&key) => self.selected_decals.push(key),
             (None, Some(key)) => {
                 let selected = self.selected_decals.contains(&key);
-                let takes_out = (self.held.shift && selected).then_some(key);
+                let takes_out = (adds && selected).then_some(key);
                 if !selected {
                     self.selection.clear();
                     self.selected_decals = vec![key];
@@ -541,10 +552,34 @@ impl Session {
                 self.begin_move(world, point, None, takes_out);
             }
             (None, None) => {
-                let mode = if self.held.shift { BoxMode::Add } else { BoxMode::Replace };
+                let mode = if adds { SelectMode::Add } else { SelectMode::Replace };
                 self.drag = Drag::SelectBox(BoxDrag { from: world, to: world, mode });
             }
         }
+    }
+
+    /// Select was pressed with a shape other than Rectangle. Select same takes what is under
+    /// the cursor at once. With the others a plain press on what is selected moves the
+    /// selection, as with Rectangle, and any other press begins the shape, even over an
+    /// entity, so that a lasso can begin anywhere.
+    fn select_shape_down(&mut self, world: (f32, f32), point: (f32, f32)) {
+        let shape = self.select_shape();
+        let mode = self.press_mode();
+        if shape == SelectShape::Same {
+            self.select_same_things(world, mode);
+            return;
+        }
+        if mode == SelectMode::Replace {
+            let targets = self.select_targets();
+            let entity = self.entities_at(world).first().copied().filter(|_| targets.entities);
+            let decal = if entity.is_none() && targets.decals { self.decals_at(world).first().copied() } else { None };
+            let selected = entity.is_some_and(|uid| self.selection.contains(&uid)) || decal.is_some_and(|key| self.selected_decals.contains(&key));
+            if selected {
+                self.begin_move(world, point, None, None);
+                return;
+            }
+        }
+        self.marquee_down(world, None, shape, mode);
     }
 
     /// Begins a move of the selected entities and decals from a press.
@@ -613,9 +648,18 @@ impl Session {
     pub(super) fn select_box_up(&mut self, world: (f32, f32), drag: BoxDrag) {
         let BoxDrag { from, mode, .. } = drag;
         let (found, decals) = if from == world { (Vec::new(), Vec::new()) } else { (self.entities_in(from, world), self.decals_in(from, world)) };
+        self.apply_selection(found, decals, mode);
+    }
+
+    /// Entities and decals that a shape of Select found: those of the select targets take the
+    /// selection's place, are added to it or are taken out of it, as the mode says.
+    pub(super) fn apply_selection(&mut self, mut found: Vec<i32>, mut decals: Vec<(i32, i32)>, mode: SelectMode) {
+        let targets = self.select_targets();
+        found.retain(|_| targets.entities);
+        decals.retain(|_| targets.decals);
         match mode {
-            BoxMode::Replace => (self.selection, self.selected_decals) = (found, decals),
-            BoxMode::Add => {
+            SelectMode::Replace => (self.selection, self.selected_decals) = (found, decals),
+            SelectMode::Add => {
                 for uid in found {
                     if !self.selection.contains(&uid) {
                         self.selection.push(uid);
@@ -627,7 +671,7 @@ impl Session {
                     }
                 }
             }
-            BoxMode::TakeAway => {
+            SelectMode::Subtract => {
                 self.selection.retain(|uid| !found.contains(uid));
                 self.selected_decals.retain(|key| !decals.contains(key));
             }
@@ -637,11 +681,7 @@ impl Session {
     /// The outline of a selection box being dragged out, which says what the box is for.
     pub(super) fn select_box_outlines(&self, drag: &BoxDrag, outlines: &mut Vec<Outline>) {
         let BoxDrag { from, to, mode } = drag;
-        let style = match mode {
-            BoxMode::Replace => OutlineStyle::Drag,
-            BoxMode::Add => OutlineStyle::DragAdd,
-            BoxMode::TakeAway => OutlineStyle::DragTakeAway,
-        };
+        let style = mode_style(*mode);
         outlines.push(Outline { corners: boxed((from.0.min(to.0), from.1.min(to.1), from.0.max(to.0), from.1.max(to.1))), style });
     }
 

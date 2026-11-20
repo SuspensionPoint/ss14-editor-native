@@ -1246,6 +1246,18 @@ public static class CopyCheck
                 $"no uid appears twice among the {uids.Length} in the file",
                 $"{uids.Length - uids.Distinct().Count()} uids appear twice in the file");
 
+            // A fork's decal chunk entities that the file did not number are numbered after
+            // everything else, so a paste moves their numbers on. Their decals are held apart,
+            // without those numbers: a paste of entities leaves every grid's decals as they were.
+            if (ChunkDecalLines.Chunked)
+            {
+                var (chunks, chunksNow) = (ChunkDecalLines.Model(before), ChunkDecalLines.Model(after));
+                Expect(chunks.SequenceEqual(chunksNow),
+                    $"the {chunks.Count} decal chunk entities of the file are as they were: each one's grid and chunk, the highest id it has given and each of its decals",
+                    $"the decal chunk entities are not as they were: {chunks.Count} before and {chunksNow.Count} after, the first that differs: {chunks.Except(chunksNow).Concat(chunksNow.Except(chunks)).FirstOrDefault() ?? "the same lines, some twice"}");
+                (before, after) = (ChunkDecalLines.Without(before), ChunkDecalLines.Without(after));
+            }
+
             var (was, now) = (Blocks(before), Blocks(after));
             var added = now.Keys.Where(uid => !was.ContainsKey(uid)).ToHashSet();
             var stripped = Without(after, added);

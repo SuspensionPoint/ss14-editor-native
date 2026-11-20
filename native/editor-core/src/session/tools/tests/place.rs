@@ -50,15 +50,29 @@ fn a_place_drag_remembers_every_cell_it_has_placed_in() {
 }
 
 #[test]
-fn a_drag_places_what_does_not_sit_on_cells_only_where_it_was_pressed() {
+fn a_drag_placing_freely_places_only_where_it_was_pressed() {
     let (mut session, engine) = placing();
     choose(&mut session, "PlaceFree");
+    session.set_place_free(true);
     session.pointer_down(at(&session, (1.25, 4.25)), VIEW, Button::Primary);
     session.pointer_move(over(&session, (2, 4)), VIEW);
     session.pointer_move(over(&session, (3, 4)), VIEW);
     session.pointer_up(over(&session, (3, 4)), VIEW);
 
     assert_eq!(asked(&engine), [vec![json!({ "kind": "spawn", "prototype": "Table", "parent": GRID, "x": 1.25, "y": 4.25, "rotation": 0.0 })]]);
+}
+
+#[test]
+fn snap_to_cell_puts_what_does_not_sit_on_cells_on_the_cell_too_and_lays_a_row() {
+    let (mut session, engine) = placing();
+    choose(&mut session, "PlaceFree");
+    assert!(!session.place_free());
+    session.pointer_down(at(&session, (1.25, 4.25)), VIEW, Button::Primary);
+    session.pointer_move(over(&session, (2, 4)), VIEW);
+    session.pointer_up(over(&session, (2, 4)), VIEW);
+
+    let placed: Vec<(f64, f64)> = asked(&engine).iter().flatten().map(|op| (op["x"].as_f64().unwrap(), op["y"].as_f64().unwrap())).collect();
+    assert_eq!(placed, [(1.5, 4.5), (2.5, 4.5)]);
 }
 
 #[test]
@@ -70,8 +84,11 @@ fn the_place_tool_outlines_where_it_would_place() {
         session.pointer_move(at(&session, (2.25, 3.75)), VIEW);
         assert_eq!(outline(&session), (OutlineStyle::Hover, [(2.0, 3.0), (3.0, 3.0), (3.0, 4.0), (2.0, 4.0)]));
     }
-    // Off the grids it is a square around the place itself, which here is the cursor.
+    // Off the grids it is a square around the place itself: the map's cell with Snap to cell,
+    // and the cursor placing freely.
     session.pointer_move(at(&session, (8.25, 8.25)), VIEW);
+    assert_eq!(outline(&session), (OutlineStyle::Hover, [(8.0, 8.0), (9.0, 8.0), (9.0, 9.0), (8.0, 9.0)]));
+    session.set_place_free(true);
     assert_eq!(outline(&session), (OutlineStyle::Hover, [(7.75, 7.75), (8.75, 7.75), (8.75, 8.75), (7.75, 8.75)]));
 }
 
@@ -150,13 +167,20 @@ fn only_place(engine: &Receiver<ToEngine>) -> (String, f64, f64) {
 }
 
 #[test]
-fn a_crowbar_goes_where_the_cursor_is_with_shift_and_without() {
+fn a_crowbar_goes_where_the_cursor_is_with_free_or_shift_and_on_its_cell_with_snap() {
     let (mut session, engine) = Session::offline(&scene_off_whole_units());
     session.set_tool(Tool::Place);
     session.set_prototypes(vec![real_crowbar()]);
     session.choose_entity(0);
     let origin = (-1.8541667_f32, -0.40625_f32);
+    // The cell (2, 3) of the grid, three tenths across and seven up.
+    let world = (origin.0 + 2.3, origin.1 + 3.7);
+    // Snap to cell, without Shift, puts it on the middle of the cell.
+    click(&mut session, world);
+    let (_, x, y) = only_place(&engine);
+    assert!((x - 2.5).abs() < 1e-4 && (y - 3.5).abs() < 1e-4, "snapped to ({x}, {y})");
     for shift in [true, false] {
+        session.set_place_free(!shift);
         session.held.shift = shift;
         // The cell (2, 3) of the grid, three tenths across and seven up.
         let world = (origin.0 + 2.3, origin.1 + 3.7);
@@ -269,17 +293,22 @@ fn the_brushes_show_the_chosen_entity_where_a_press_would_put_it() {
     let (mut session, _engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
     give_previews(&mut session, SQUARE);
-    // Turned with the place tool. The brushes put it down unturned all the same.
+    // Turned a quarter clockwise with the place tool. The brushes put it down turned the same.
     session.set_tool(Tool::Place);
     tap_r(&mut session, false);
+    // The ghost's corners a quarter on: the corner that was bottom left is top left.
+    let turned = [CELL_2_3[3], CELL_2_3[0], CELL_2_3[1], CELL_2_3[2]];
     for tool in [Tool::Paint, Tool::Rectangle, Tool::Line, Tool::Circle] {
         session.set_tool(tool);
-        // Off the cell's middle, and the ghost is on its middle, unturned and half seen through.
+        // Off the cell's middle, and the ghost is on its middle, turned and half seen through.
         session.pointer_move(at(&session, (2.25, 3.75)), VIEW);
-        assert_eq!(ghost(&mut session), CELL_2_3, "{tool:?}");
+        assert_eq!(ghost(&mut session), turned, "{tool:?}");
         assert_eq!(session.overlay_quads().1[11], 0.5, "{tool:?}");
         let preview = session.place_preview(1.0).expect("a preview");
-        assert_eq!((preview.at, preview.label.as_deref(), preview.facing, preview.square), ((2.5, 3.5), Some("Table"), None, None), "{tool:?}");
+        assert_eq!((preview.at, preview.label.as_deref(), preview.square), ((2.5, 3.5), Some("Table"), None), "{tool:?}");
+        // Facing left, with its arrow.
+        let facing = preview.facing.expect("an arrow");
+        assert_eq!((facing.0.round(), facing.1.round()), (-1.0, 0.0), "{tool:?}");
     }
     // The eraser deletes, and Fill knows tiles alone.
     for tool in [Tool::Erase, Tool::Fill, Tool::Pick, Tool::Select] {

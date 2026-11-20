@@ -391,25 +391,26 @@ public sealed partial class ViewWorld
     }
 
 #if FORK_DECAL_CHUNK_ENTITIES
-    // A fork that keeps its decals on chunk entities numbers them in a way the grid's own decal
-    // component cannot hold (Editor.Kernel/Documents.cs ChunkDecals). They are kept here by
-    // grid, and drawn from here as the game's DecalOverlay draws them (RecordDecals).
-    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DecalGridComponent, SortedDictionary<int, Decal>> _chunkDecals = new();
+    // A fork that keeps its decals on chunk entities has them numbered by the kernel, in a way
+    // the grid's own decal component cannot hold (Editor.Kernel/ChunkDecals.cs). They are kept
+    // here by grid, each with where the game draws it, and drawn from here as the game's
+    // DecalOverlay draws them (RecordDecals).
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<DecalGridComponent, Dictionary<int, (long Order, Decal Decal)>> _chunkDecals = new();
 
-    private SortedDictionary<int, Decal> ChunkDecalsOf(DecalGridComponent comp) => _chunkDecals.GetOrCreateValue(comp);
+    private Dictionary<int, (long Order, Decal Decal)> ChunkDecalsOf(DecalGridComponent comp) => _chunkDecals.GetOrCreateValue(comp);
 
     private void ClearDecals(DecalGridComponent comp)
     {
         _chunkDecals.Remove(comp);
     }
 
-    private void PutDecal(DecalGridComponent comp, SceneDecal scene) => ChunkDecalsOf(comp)[scene.Id] = ToDecal(scene);
+    private void PutDecal(DecalGridComponent comp, SceneDecal scene) => ChunkDecalsOf(comp)[scene.Id] = (scene.Order, ToDecal(scene));
 
     private void RemoveDecal(DecalGridComponent comp, uint id) => ChunkDecalsOf(comp).Remove((int) id);
 
-    /// <summary>A grid's decals with their numbers, in no order.</summary>
-    private IEnumerable<(long Id, Decal Decal)> DecalsOf(DecalGridComponent comp) =>
-        _chunkDecals.TryGetValue(comp, out var decals) ? decals.Select(pair => ((long) pair.Key, pair.Value)) : [];
+    /// <summary>A grid's decals, each with where the game draws it among those of its z-index, in no order.</summary>
+    private IEnumerable<(long Order, Decal Decal)> DecalsOf(DecalGridComponent comp) =>
+        _chunkDecals.TryGetValue(comp, out var decals) ? decals.Values : Enumerable.Empty<(long Order, Decal Decal)>();
 #else
     private static void ClearDecals(DecalGridComponent comp)
     {
@@ -417,8 +418,8 @@ public sealed partial class ViewWorld
         comp.DecalIndex.Clear();
     }
 
-    /// <summary>A grid's decals with their numbers, in no order.</summary>
-    private static IEnumerable<(long Id, Decal Decal)> DecalsOf(DecalGridComponent comp)
+    /// <summary>A grid's decals, each with where the game draws it among those of its z-index (its number), in no order.</summary>
+    private static IEnumerable<(long Order, Decal Decal)> DecalsOf(DecalGridComponent comp)
     {
         foreach (var chunk in comp.ChunkCollection.ChunkCollection.Values)
         foreach (var (id, decal) in chunk.Decals)

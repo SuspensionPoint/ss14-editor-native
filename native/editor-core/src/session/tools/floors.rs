@@ -112,7 +112,7 @@ impl Session {
     /// The tile a press of the tool in hand would lay under the chosen entity, if it would
     /// lay one: the tool is the place tool or a brush that puts entities down.
     fn floor_in_hand(&self) -> Option<String> {
-        let brush = matches!(self.tool, Tool::Place | Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle);
+        let brush = matches!(self.tool, Tool::Place | Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon);
         self.chosen_prototype().filter(|_| brush).and_then(|prototype| self.floor_for(prototype))
     }
 
@@ -148,6 +148,21 @@ impl Session {
     pub fn set_room_intersection(&mut self, on: bool) {
         if self.flooring.placing.room_intersection != on {
             self.flooring.placing.room_intersection = on;
+            self.save_flooring();
+        }
+    }
+
+    /// The shape the Room tool builds rooms in.
+    pub fn room_shape(&self) -> crate::toolbox::RoomShape {
+        self.flooring.placing.room_shape
+    }
+
+    /// Sets the shape the Room tool builds rooms in, and keeps it for the fork. A room being
+    /// drawn is dropped.
+    pub fn set_room_shape(&mut self, shape: crate::toolbox::RoomShape) {
+        self.cancel_room();
+        if self.flooring.placing.room_shape != shape {
+            self.flooring.placing.room_shape = shape;
             self.save_flooring();
         }
     }

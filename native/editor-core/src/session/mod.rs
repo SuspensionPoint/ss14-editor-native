@@ -26,6 +26,7 @@ use crate::links::{EntityPorts, LinkMirror, LinksAnswer, Ports, PortsJson};
 use crate::loading::{Loading, Step};
 use crate::locale::Locale;
 use crate::model::{cells_between, share_names, Container, DecalPrototype, Delta, Doc, EngineTiming, Entity, EntityContainers, Prototype, SceneJson, SPACE};
+use crate::draw_depths::{DepthGroups, DrawDepth};
 use crate::renderer::{group, group_of, Camera, GridLines};
 use crate::textures::BakedTextures;
 
@@ -54,10 +55,10 @@ pub use grids::{GridRow, GRID_FILE, MAP_GROUND};
 pub use palettes::{shown_name, InHand};
 pub use problems::PLATING;
 pub use tools::{
-    arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MenuAction, MenuEntry, Outline,
-    OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, ToolEntry, CONTROLS, PIPE_COLOURS,
+    arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MarqueePath, MenuAction, MenuEntry, Outline,
+    OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, CONTROLS, PIPE_COLOURS,
 };
-use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Turning};
+use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Marqueeing, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Tooling, Tracing, Turning};
 
 /// Where a session's pack and textures come from.
 enum Content {
@@ -287,6 +288,8 @@ pub struct Session {
     /// Whether a tile is laid under new walls and which, and the Room tool's wall, kept in
     /// the settings file under the fork.
     flooring: Flooring,
+    /// The toolbar's target, options and select mode, and the settings file they are kept in.
+    tooling: Tooling,
     /// Selected entities, by uid.
     pub selection: Vec<i32>,
     /// Selected decals, by their grid's uid and their id on it. The select tool selects them
@@ -327,6 +330,8 @@ pub struct Session {
     /// The last message for a status bar. Only [`Self::set_status`] changes it, and a status
     /// bar shows [`Self::status_line`].
     status: String,
+    /// Why the layer switches use Starlight's draw depths, said with the first map to open.
+    depths_warning: Option<String>,
     /// What a press last asked the mapper to choose, until a choice answers it or a message
     /// takes its place.
     hint: Option<Hint>,
@@ -378,6 +383,10 @@ pub struct Session {
     stepping: Stepping,
     /// The list of what could be picked on one cell that the pick tool's wheel steps through.
     picking: Picking,
+    /// A polygon of Select being clicked out.
+    marqueeing: Marqueeing,
+    /// A polygon of Paint, Erase or the Room tool being clicked out.
+    tracing: Tracing,
     /// The cells the area tool has selected.
     region: Option<Region>,
     /// Where on the map the region's menu was opened, while it is open.
@@ -448,6 +457,7 @@ impl Session {
         session.problems = problems::Problems::load(crate::forks::settings::Settings::file(), &fork);
         session.animate = animate::Animate::load(crate::forks::settings::Settings::file());
         session.flooring = Flooring::load(crate::forks::settings::Settings::file(), &fork);
+        session.tooling = Tooling::load(crate::forks::settings::Settings::file());
         std::thread::Builder::new()
             .name("engine".into())
             .spawn(move || {
@@ -498,6 +508,7 @@ impl Session {
             palettes: palettes::Palettes::default(),
             favourites: favourites::Favourites::default(),
             flooring: Flooring::default(),
+            tooling: Tooling::default(),
             selection: Vec::new(),
             selected_decals: Vec::new(),
             details: None,
@@ -518,6 +529,7 @@ impl Session {
             fixing_air: air_fix::FixingAir::default(),
             sent_t_ray: None,
             status: "Engine starting".into(),
+            depths_warning: None,
             hint: None,
             loading: None,
             engine_gone: false,
@@ -543,6 +555,8 @@ impl Session {
             turning: Turning::default(),
             stepping: Stepping::default(),
             picking: Picking::default(),
+            marqueeing: Marqueeing::default(),
+            tracing: Tracing::default(),
             region: None,
             region_menu: None,
             region_waiting: None,
@@ -722,14 +736,28 @@ impl Session {
                     }
                     self.set_status(format!("Not opened: {}", error.lines().next().unwrap_or("")));
                 }
-                FromEngine::Ready { document_kernel_ms, view_kernel_ms, warm_up_ms, tiles, prototypes, decal_prototypes, ports } => {
+                FromEngine::Ready { document_kernel_ms, view_kernel_ms, warm_up_ms, tiles, prototypes, decal_prototypes, ports, depths, depths_warning } => {
                     self.ports = ports;
+                    self.lists.depths = Arc::new(depths);
                     self.engine_ready_ms = Some(self.started.elapsed().as_millis() as u64);
                     self.warm_up_ms = Some(warm_up_ms);
                     self.set_status(format!(
                         "Engine ready (document kernel {document_kernel_ms} ms, view kernel {view_kernel_ms} ms, warm-up {warm_up_ms} ms). Opening the map"
                     ));
-                    self.palette = tiles.iter().find(|t| t.id == "FloorSteel").or(tiles.first()).map_or(Palette::None, |t| Palette::Tile(t.id.clone()));
+                    if let Some(warning) = &depths_warning {
+                        self.set_status(format!("{}. {warning}", self.status));
+                    }
+                    self.depths_warning = depths_warning;
+                    // The first tile in hand, which the Tiles target takes back. With another
+                    // target already set, as by a key before the engine was ready, the palette
+                    // keeps to that target.
+                    let first = tiles.iter().find(|t| t.id == "FloorSteel").or(tiles.first()).map(|t| t.id.clone());
+                    if let Some(first) = first {
+                        self.tooling.toolbox.remember_tile(&first);
+                        if self.target() == crate::toolbox::Target::Tiles {
+                            self.palette = Palette::Tile(first);
+                        }
+                    }
                     self.tile_sprites = tiles.iter().map(|tile| (tile.id.clone(), tile.sprite.clone())).collect();
                     self.tiles = tiles;
                     self.set_prototypes(prototypes);
@@ -753,6 +781,10 @@ impl Session {
                             self.set_status(format!("{}: {entities} entities, opened by the engine in {:.0} ms", doc.source, timing.total_ms));
                         }
                         Err(error) => self.set_status(format!("{}: {entities} entities. The engine couldn't list the links: {}", doc.source, error.lines().next().unwrap_or(""))),
+                    }
+                    // Said again with the first map, whose line takes the place of the one that said it.
+                    if let Some(warning) = self.depths_warning.take() {
+                        self.set_status(format!("{}. {warning}", self.status));
                     }
                     self.doc = Some(doc);
                     self.selection.clear();

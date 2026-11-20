@@ -454,7 +454,7 @@ public sealed partial class ViewWorld
         decals.Sort((a, b) =>
         {
             var byZ = a.Decal.ZIndex.CompareTo(b.Decal.ZIndex);
-            return byZ != 0 ? byZ : a.Id.CompareTo(b.Id);
+            return byZ != 0 ? byZ : a.Order.CompareTo(b.Order);
         });
 
         _recorder!.SetTransform(matrix);

@@ -24,7 +24,7 @@ namespace SS14.EditorNative;
 /// Lines starting with "found" note where the engine behaves differently than one might expect.
 /// They don't fail the check. Lines starting with "FAIL" do.
 /// </summary>
-public static class RegionCheck
+public static partial class RegionCheck
 {
     private const int Width = 12;
     private const int Height = 8;
@@ -52,9 +52,12 @@ public static class RegionCheck
             .Select(tile => tile.GetProperty("id").GetString() ?? "")
             .ToHashSet();
         say($"tiles the game draws by their rotation byte ({turning.Count}): {string.Join(", ", turning.Order(StringComparer.Ordinal))}");
-        var untold = turning.Count == 0;
+        // A fork may have no such tile at all, as Space Wizards' master has none. Its prototypes say.
+        var untold = turning.Count == 0 && TurningInFiles(forkRepo);
         if (untold)
-            say("  FAIL  the kernel names no tile that can be turned");
+            say("  FAIL  the kernel names no tile that can be turned, and the fork's tile prototypes have some");
+        else if (turning.Count == 0)
+            CheckSkips.Skip(say, "tiles drawn by their rotation byte: the fork's tile prototypes have none");
 
         var miscounted = QuarterCases.Where(pair => ByQuarters(pair.Angle) != pair.On).ToList();
         say(miscounted.Count == 0
@@ -92,6 +95,11 @@ public static class RegionCheck
         CheckSkips.Report(say, skipsBefore);
         return failed == 0 && !untold ? 0 : 1;
     }
+
+    /// <summary>Whether any of the fork's tile prototypes may be turned (allowRotationMirror), read from its files.</summary>
+    private static bool TurningInFiles(string forkRepo) =>
+        Directory.EnumerateFiles(Path.Combine(forkRepo, "Resources", "Prototypes"), "*.yml", SearchOption.AllDirectories)
+            .Any(file => File.ReadAllText(file).Contains("allowRotationMirror: true", StringComparison.OrdinalIgnoreCase));
 
     // ---- the saved file, line by line ----
 
@@ -145,8 +153,11 @@ public static class RegionCheck
                     return "tile chunk";
                 case "GridAtmosphere":
                     return "air";
-                case "DecalGrid":
+                case "DecalGrid" or "DecalChunk":
                     return text.Length > 0 && char.IsAsciiDigit(text[0]) ? "decal coordinate" : "decal group";
+                // A fork's chunk entities of decals, and the lists of them a grid or map keeps.
+                case "ChunkEntity" or "ChunkContainer":
+                    return "decal chunk";
                 case "Transform":
                     return text.StartsWith("pos:", StringComparison.Ordinal) ? "pos"
                         : text.StartsWith("rot:", StringComparison.Ordinal) ? "rot"
@@ -441,7 +452,14 @@ public static class RegionCheck
         foreach (var (entity, x, y, _) in entities)
             ops.Add(new EditOp("move", Uid: entity.Uid, X: x, Y: y));
 
-        var decals = on.Decals.Select(decal => (decal, decal.X + dx, decal.Y + dy, decal.Angle)).ToList();
+        // As the editor sends them (area.rs decal_move_order): the chunks the move goes towards
+        // first, so they are left before the decals behind them come in, each in draw order.
+        var decals = on.Decals
+            .OrderBy(decal => -Math.Sign(dx) * ChunkOf(decal.X, decal.Y).X)
+            .ThenBy(decal => -Math.Sign(dy) * ChunkOf(decal.X, decal.Y).Y)
+            .ThenBy(decal => decal.Order)
+            .ThenBy(decal => decal.Id)
+            .Select(decal => (decal, decal.X + dx, decal.Y + dy, decal.Angle)).ToList();
         foreach (var (decal, x, y, angle) in decals)
             ops.Add(DecalOp(grid, decal, x, y, angle));
 
@@ -600,6 +618,8 @@ public static class RegionCheck
         private int _mapUid;
         private bool _canUndo;
         private Saved _before = null!;
+        /// <summary>The chunk entities the first save has with no decals, by their grid or map and chunk: the file's own.</summary>
+        private HashSet<(int Root, (int X, int Y) Chunk)> _fileEmpty = new();
         private (long EngineMs, long TotalMs, int Ops, string Label) _largest;
 
         public int Failures { get; private set; }
@@ -662,10 +682,11 @@ public static class RegionCheck
             return Saved.Of(yaml.Split('\n'));
         }
 
-        private (SceneDelta Delta, Shown Time) Edit(string label, IReadOnlyList<EditOp> ops)
+        /// <param name="merge">Whether the edit joins the step before it, as the frames of one drag do.</param>
+        private (SceneDelta Delta, Shown Time) Edit(string label, IReadOnlyList<EditOp> ops, bool merge = false)
         {
             using var timed = CheckTimes.In(CheckTimes.Edit);
-            var (delta, time) = session.Edit(_document, label, ops);
+            var (delta, time) = session.Edit(_document, label, ops, merge);
             _canUndo = delta.History.CanUndo;
             if (time.DocumentMs >= _largest.EngineMs)
                 _largest = (time.DocumentMs, time.TotalMs, ops.Count, label);
@@ -743,6 +764,7 @@ public static class RegionCheck
             _document = scene.Document.Id;
             _mapUid = scene.Document.MapUid;
             _before = Save("before");
+            _fileEmpty = ChunkDecalLines.Chunks(_before.Lines).Where(chunk => chunk.Empty).Select(chunk => (chunk.Root, chunk.Chunk)).ToHashSet();
 
             var grid = scene.Grids.OrderByDescending(g => g.Tiles.Count).First();
             _grid = grid.Uid;
@@ -795,6 +817,7 @@ public static class RegionCheck
             Try("a tile emptied under a loose thing", () => Emptied("a loose thing", loose.FirstOrDefault(entity => !entity.Prototype.Contains("Spawn", StringComparison.Ordinal)) ?? loose.FirstOrDefault(), scene));
             Try("a tile emptied under a container", () => Emptied("a container with contents", containers.FirstOrDefault(), scene));
             Try("an anchored entity onto space", () => Anchored(walls, (left + far + 40, bottom)));
+            Try("decals placed, changed, moved and removed", () => Decals(grid, tiles));
             Try("a decal of a kind the game does not have", () => Stranger(grid, tiles));
             Try("a large region", () => Large(scene, grid, tiles, left + Width / 2 - 25, bottom + Height / 2 - 25));
 
@@ -804,6 +827,85 @@ public static class RegionCheck
 
         /// <summary>How many of the decals are of a kind the game does not have. A map can hold such.</summary>
         private int Strangers(Standing on) => on.Decals.Count(decal => !decalKinds.Contains(decal.Prototype));
+
+        /// <summary>The grid as the scene has it now.</summary>
+        private SceneGrid GridNow() => session.Scene(_document).Grids.First(g => g.Uid == _grid);
+
+        /// <summary>
+        /// Two saves to compare line by line. On a fork that keeps its decals on chunk entities,
+        /// without the decals' storage, which DecalsAsGame checks apart.
+        /// </summary>
+        private static Differences Lines(Saved was, Saved now) => Chunked ? Compare(Plainly(was), Plainly(now)) : Compare(was, now);
+
+        /// <summary>
+        /// On a fork that keeps its decals on chunk entities: whether the save's decal chunks are
+        /// what the game's decal system makes of the edit's decal ops on those of the save before,
+        /// and each decal of the scene is where the kernel's numbers say. Said either way.
+        /// </summary>
+        /// <param name="before">The grid before the edit, whose decals the ops change.</param>
+        /// <param name="created">The numbers the edit gave the decals it made, in the order of their ops.</param>
+        private void DecalsAsGame(string what, Saved was, Saved now, IReadOnlyList<EditOp> ops, SceneGrid before, IReadOnlyList<int>? created = null)
+        {
+            if (!Chunked)
+                return;
+
+            var want = AsGame(ModelOf(was, _gridYaml), ops, _grid, PlacesOf(before));
+            var got = ModelOf(now, _gridYaml);
+            var unlike = Unlike(want, got);
+            unlike.AddRange(ChunkProblems(was, now));
+            var gridNow = GridNow();
+            var misplaced = Misplaced(gridNow, got);
+            var (renumbered, altered) = Identity(before, ops, created, gridNow, got);
+            Expect(unlike.Count == 0 && misplaced == 0 && renumbered == 0 && altered == 0,
+                $"{what}: the save's decal chunks are what the game's decal system makes of the decal ops: {got.Decals.Count} decals in {got.Max.Count} chunk entities, each with the id and highest id given expected, no chunk entity left with no decals and those of other grids as they were. Each decal of the scene is in the chunk and under the id its number says, and is what the ops made of the decal of that number, as the save has it",
+                $"{what}: the save's decal chunks are not what the game's decal system makes of the decal ops. {unlike.Count} things differ, {misplaced} decals of the scene are not where the kernel's numbers say, {renumbered} decals of the scene are not what the ops made of the decal of their number, and {altered} decals of the save are not what the ops leave");
+            foreach (var line in unlike.Take(6))
+                say($"        {line}");
+        }
+
+        /// <summary>
+        /// What is wrong with a save's chunk entities beyond the edited grid's decals: one with no
+        /// decals that the file did not have so, the chunk entities of any other grid or map not
+        /// as they were, and a grid or map that does not list its own chunk entities.
+        /// </summary>
+        private List<string> ChunkProblems(Saved was, Saved now)
+        {
+            var problems = new List<string>();
+            var chunks = ChunkDecalLines.Chunks(now.Lines);
+            foreach (var chunk in chunks.Where(chunk => chunk.Empty && !_fileEmpty.Contains((chunk.Root, chunk.Chunk))))
+                problems.Add($"the chunk entity {chunk.Uid} of chunk {chunk.Chunk.X},{chunk.Chunk.Y} of {(chunk.Root == _gridYaml ? "the grid" : $"entity {chunk.Root}")} holds no decals, and the file has none such");
+
+            var (others, othersNow) = (ChunkDecalLines.Model(was.Lines, root => root != _gridYaml), ChunkDecalLines.Model(now.Lines, root => root != _gridYaml));
+            if (!others.SequenceEqual(othersNow))
+                problems.Add($"the chunk entities of the other grids and maps are not as they were: {others.Count} before and {othersNow.Count} after, the first that differs: {others.Except(othersNow).Concat(othersNow.Except(others)).FirstOrDefault() ?? "the same lines, some twice"}");
+
+            var listed = ChunkDecalLines.Containers(now.Lines);
+            foreach (var root in chunks.Select(chunk => chunk.Root).Concat(listed.Keys).Distinct().Order())
+            {
+                var (own, lists) = (chunks.Where(chunk => chunk.Root == root).Select(chunk => chunk.Uid).Order().ToList(), listed.GetValueOrDefault(root, []).Order().ToList());
+                if (!own.SequenceEqual(lists))
+                    problems.Add($"entity {root} lists {lists.Count} chunk entities as its own, and {own.Count} are its chunks");
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// On a fork that keeps its decals on the grid: whether the save has each decal of the
+        /// scene under its number, as the scene has it, and no other. Said either way.
+        /// </summary>
+        private void DecalsSaved(string what, Saved now)
+        {
+            if (Chunked)
+                return;
+
+            var saved = GridDecals(now, _gridYaml);
+            var scene = GridNow().Decals;
+            var wrong = scene.Count(decal => saved.GetValueOrDefault(decal.Id) != ModelDecal.Of(decal)) + saved.Keys.Count(id => scene.All(decal => decal.Id != id));
+            Expect(wrong == 0,
+                $"{what}: the save has each of the grid's {scene.Count} decals under its number, as the scene has it",
+                $"{what}: {wrong} decals of the save and the scene are not alike");
+        }
 
         /// <summary>
         /// The decals of a grid as a save has them: for each its coordinates, and the lines of
@@ -1246,7 +1348,9 @@ public static class RegionCheck
 
         private void Move(string what, string tag, HashSet<(int X, int Y)> cells, int dx, int dy, Dictionary<(int X, int Y), TileOn> tilesBefore, Scene sceneBefore)
         {
-            var on = On(session.Scene(_document), _grid, cells);
+            var current = session.Scene(_document);
+            var gridBefore = current.Grids.First(g => g.Uid == _grid);
+            var on = On(current, _grid, cells);
             var plan = MovePlan(_grid, on, dx, dy);
             var covered = plan.Tiles.Keys.Where(cell => !cells.Contains(cell) && tilesBefore.ContainsKey(cell)).ToHashSet();
             var (delta, time) = Edit("Move region", plan.Ops);
@@ -1254,14 +1358,19 @@ public static class RegionCheck
             Info($"{what} (by {dx},{dy}): one edit of {plan.Ops.Count} ops ({plan.Tiles.Count} tiles written, {plan.Entities.Count} entities, {plan.Decals.Count} decals, {plan.Emptied.Count} cells emptied), {time.DocumentMs} ms in the document kernel; {covered.Count} of the cells it went to had a tile already");
             Kept(what, delta, plan);
 
-            var differences = Compare(_before, moved);
+            var differences = Lines(_before, moved);
             var wanted = on.Entities.Select(entity => entity.YamlUid).ToHashSet();
             var positions = differences.Lines.Where(line => line.Kind == "pos").Select(line => line.Uid).ToHashSet();
+            // Where decals are kept on chunk entities, their lines are left out and checked apart.
+            var decalLines = Chunked ? 0 : on.Decals.Count;
             if (differences.Only("tile chunk", "pos", "decal coordinate", "air")
                 && positions.SetEquals(wanted) && differences.Removed("pos") == wanted.Count && differences.Added("pos") == wanted.Count
-                && differences.Removed("decal coordinate") == on.Decals.Count && differences.Added("decal coordinate") == on.Decals.Count)
+                && differences.Removed("decal coordinate") == decalLines && differences.Added("decal coordinate") == decalLines)
             {
-                Ok($"{what}: the saved file differs in tile chunk lines ({differences.Count("tile chunk")}), air lines ({differences.Count("air")}), {wanted.Count} position lines, one for each entity moved, and {on.Decals.Count} decal coordinate lines, one for each decal{(Strangers(on) > 0 ? $" ({Strangers(on)} of them of a kind the game does not have)" : "")}, and in nothing else ({_before.Lines.Length} lines)");
+                var decalsSaid = Chunked
+                    ? "and but for the decals' chunk entities"
+                    : $"and {on.Decals.Count} decal coordinate lines, one for each decal{(Strangers(on) > 0 ? $" ({Strangers(on)} of them of a kind the game does not have)" : "")}, and";
+                Ok($"{what}: the saved file differs in tile chunk lines ({differences.Count("tile chunk")}), air lines ({differences.Count("air")}), {wanted.Count} position lines, one for each entity moved, {decalsSaid} in nothing else ({_before.Lines.Length} lines)");
             }
             else
             {
@@ -1270,6 +1379,7 @@ public static class RegionCheck
                     say(line);
             }
 
+            DecalsAsGame(what, _before, moved, plan.Ops, gridBefore);
             AirCarried(what, _before, moved, plan);
 
             Undo();
@@ -1279,10 +1389,13 @@ public static class RegionCheck
 
             // Back again, as a second edit built from the scene as it now is.
             var there = plan.Tiles.Keys.ToHashSet();
-            var back = MovePlan(_grid, On(session.Scene(_document), _grid, there), -dx, -dy);
+            var movedScene = session.Scene(_document);
+            var back = MovePlan(_grid, On(movedScene, _grid, there), -dx, -dy);
             Edit("Move region", back.Ops);
             var backSaved = Save($"{tag}.back");
-            var returned = Compare(_before, backSaved);
+            // A decal that left its chunk and came back has the id the chunk gave it then.
+            DecalsAsGame($"{what}, then moved back as a second edit", moved, backSaved, back.Ops, movedScene.Grids.First(g => g.Uid == _grid));
+            var returned = Lines(_before, backSaved);
             var airLines = returned.Lines.Count(line => line.Kind == "air");
             if (airLines > 0 && covered.Count == 0 && SameAir(_before, backSaved))
             {
@@ -1345,7 +1458,9 @@ public static class RegionCheck
 
         private void Delete(Scene scene, HashSet<(int X, int Y)> cells)
         {
-            var on = On(session.Scene(_document), _grid, cells);
+            var current = session.Scene(_document);
+            var gridBefore = current.Grids.First(g => g.Uid == _grid);
+            var on = On(current, _grid, cells);
             var plan = DeletePlan(_grid, on);
             var (delta, time) = Edit("Delete region", plan.Ops);
             var deleted = Save("deleted");
@@ -1380,7 +1495,7 @@ public static class RegionCheck
             // the new save but for tile chunks, decals and the count in the heading.
             var goneInFile = gone.Where(byUid.ContainsKey).Select(uid => byUid[uid].YamlUid).ToHashSet();
             var cut = _before.Without(goneInFile);
-            var differences = Compare(cut, deleted);
+            var differences = Lines(cut, deleted);
 
             // What is left behind may have named what is gone: an alarm its devices, a device its
             // alarms, a button what it is linked to. The kernel takes those names out, as the game
@@ -1388,13 +1503,14 @@ public static class RegionCheck
             var keepers = differences.Lines.Where(line => line.Kind == "list of entities").Select(line => line.Uid).ToHashSet();
             var invalid = NewlyInvalid(deleted);
             Expect(differences.Only("tile chunk", "decal coordinate", "decal group", "entity count", "list of entities", "air")
-                    && differences.Added("decal coordinate") == 0 && differences.Removed("decal coordinate") == on.Decals.Count
+                    && differences.Added("decal coordinate") == 0 && differences.Removed("decal coordinate") == (Chunked ? 0 : on.Decals.Count)
                     && invalid.Count == 0,
                 $"deleted: the map saves, and the file is the first save without the {gone.Count} entities' own lines ({_before.Lines.Length - cut.Lines.Length}), but for tile chunk lines ({differences.Count("tile chunk")}), air lines ({differences.Count("air")}), {differences.Removed("decal coordinate")} decal lines gone with {differences.Removed("decal group")} lines of groups left empty, the entity count, and the lists of {keepers.Count} entities left behind that named a deleted one (lines {differences.Count("list of entities")}). No line reads \"invalid\" that did not before",
                 $"deleted: against the first save without the {gone.Count} entities' own lines, the saved file differs in {differences.Describe()}, and {invalid.Count} lines read \"invalid\" that did not before{(invalid.Count > 0 ? $" (the first: {invalid[0]})" : "")}");
             foreach (var line in differences.Examples(kind => kind is "other" or "pos" or "rot" or "parent" or "group heading", 10))
                 say(line);
 
+            DecalsAsGame("deleted", _before, deleted, plan.Ops, gridBefore);
             AirCleared(deleted, plan);
 
             // A mirror keeps component data too, and has it right only if the delta brings it.
@@ -1585,6 +1701,8 @@ public static class RegionCheck
 
             var current = region;
             var cost = "";
+            // The decal chunks the turns should leave, by the game's rules, turn by turn.
+            var model = ModelOf(start, _gridYaml);
             // The decals that in some turn could not turn as one piece with the region, how many
             // in each turn, how many got no op at all, and how many were then on no tile.
             var fallen = new HashSet<int>();
@@ -1595,6 +1713,9 @@ public static class RegionCheck
                 var scene = session.Scene(_document);
                 var on = On(scene, _grid, current);
                 var turned = TurnPlan(_grid, on, TilesOf(scene.Grids.First(g => g.Uid == _grid)), px, py, turning);
+                var gridBefore = scene.Grids.First(g => g.Uid == _grid);
+                if (Chunked)
+                    model = AsGame(model, turned.Ops, _grid, PlacesOf(gridBefore));
                 fallen.UnionWith(turned.Fallback);
                 falls.Add(turned.Fallback.Count);
                 left += on.Decals.Count - turned.Decals.Count;
@@ -1606,7 +1727,8 @@ public static class RegionCheck
                     continue;
 
                 var one = Save("turn.once");
-                var differences = Compare(start, one);
+                DecalsAsGame("turned once", start, one, turned.Ops, gridBefore);
+                var differences = Lines(start, one);
                 cost = differences.Describe();
                 Info($"turned: one edit of {turned.Ops.Count} ops ({turned.Tiles.Count} tiles written, {turned.Entities.Count} entities moved and rotated, {turned.Decals.Count} decals, {turned.Emptied.Count} cells emptied), {time.DocumentMs} ms in the document kernel");
                 Kept("turned once", delta, turned);
@@ -1630,7 +1752,27 @@ public static class RegionCheck
                 $"turned four times: {bare} times a decal was sent to a cell with no tile, and {left} times one had no tile to go to and was left");
 
             var fourSaved = Save("turn.four");
-            var four = Compare(start, fourSaved);
+            if (Chunked)
+            {
+                var fourModel = ModelOf(fourSaved, _gridYaml);
+                var chunksUnlike = Unlike(model, fourModel);
+                chunksUnlike.AddRange(ChunkProblems(start, fourSaved));
+                var misplaced = Misplaced(GridNow(), fourModel);
+                Expect(chunksUnlike.Count == 0 && misplaced == 0,
+                    "turned four times: the save's decal chunks are what the game's decal system makes of the four turns, and each decal of the scene is in the chunk and under the id its number says",
+                    $"turned four times: the save's decal chunks are not what the game's decal system makes of the four turns. {chunksUnlike.Count} things differ, and {misplaced} decals of the scene are not where the kernel's numbers say");
+                foreach (var line in chunksUnlike.Take(6))
+                    say($"        {line}");
+
+                // The angles of the decals, which the lines compared below leave out with the decals' storage.
+                var (kinds, kindsNow) = (Kinds(ModelOf(start, _gridYaml)), Kinds(fourModel));
+                var turnedOther = kinds.Except(kindsNow).Count() + kindsNow.Except(kinds).Count();
+                Expect(kinds.SequenceEqual(kindsNow),
+                    $"turned four times: each of the {kinds.Count} decals in the save's decal chunks has the angle it had before the turns, and its kind, colour, z-index and cleanable",
+                    $"turned four times: the decals in the save's decal chunks are not as before the turns but for where they are: {turnedOther} kinds of decal differ, the first: {kinds.Except(kindsNow).Concat(kindsNow.Except(kinds)).FirstOrDefault() ?? "as many of each, in another number"}");
+            }
+
+            var four = Lines(start, fourSaved);
             var airLines = four.Lines.Count(line => line.Kind == "air");
             if (airLines > 0)
             {
@@ -1665,7 +1807,8 @@ public static class RegionCheck
             }
 
             var now = session.Scene(_document).Grids.First(g => g.Uid == _grid).Decals.ToDictionary(decal => decal.Id);
-            var notBack = whole.Count(decal => !now.TryGetValue(decal.Id, out var has) || has != decal);
+            // Where the game draws it may change on the way: a chunk gives a decal back another id.
+            var notBack = whole.Count(decal => !now.TryGetValue(decal.Id, out var has) || has with { Order = decal.Order } != decal);
             var otherAngle = first.Decals.Count(decal => !now.TryGetValue(decal.Id, out var has) || has.Angle != decal.Angle);
             float Away(SceneDecal decal) => now.TryGetValue(decal.Id, out var has) ? MathF.Max(MathF.Abs(has.X - decal.X), MathF.Abs(has.Y - decal.Y)) : float.PositiveInfinity;
             var rigid = others.Where(decal => !fallen.Contains(decal.Id)).ToList();
@@ -1743,6 +1886,155 @@ public static class RegionCheck
         }
 
         /// <summary>
+        /// Decals placed, changed in every setting, moved into another chunk, and removed, each
+        /// as one edit that is undone to the save before it and done again. The delta has each
+        /// decal as it was sent. On a fork that keeps its decals on chunk entities the save is
+        /// what the game's decal system makes of the ops: a decal placed where its chunk has
+        /// none makes a chunk entity, a chunk left with none loses its entity, and ids freed in a
+        /// chunk are given again, lowest first. On a fork that keeps them on the grid, the save
+        /// has each decal under its number.
+        /// </summary>
+        private void Decals(SceneGrid grid, Dictionary<(int X, int Y), TileOn> tiles)
+        {
+            var kind = decalKinds.Contains("Arrows") ? "Arrows" : decalKinds.Order(StringComparer.Ordinal).FirstOrDefault();
+            var other = decalKinds.Where(id => id != kind).Order(StringComparer.Ordinal).FirstOrDefault();
+            var known = grid.Decals.Where(decal => decalKinds.Contains(decal.Prototype) && tiles.ContainsKey(Cell(decal.X, decal.Y))).ToList();
+            if (kind == null || other == null || known.Count < 3)
+            {
+                Skip("decals placed, changed, moved and removed: the grid has fewer than three decals of a kind the game has");
+                return;
+            }
+
+            EditOp Placed((int X, int Y) cell, float within) => new("decal", Grid: _grid, X: cell.X + within, Y: cell.Y + within, Prototype: kind, Color: "#FF0000FF", Rotation: Quarter, ZIndex: 2, Cleanable: true);
+            EditOp Updated(SceneDecal decal) => DecalOp(_grid, decal, decal.X, decal.Y, decal.Angle);
+            var busy = Cell(known[0].X, known[0].Y);
+            var withDecals = grid.Decals.Select(decal => ChunkOf(decal.X, decal.Y)).ToHashSet();
+            var fresh = tiles.Keys.Where(cell => !withDecals.Contains(ChunkOf(cell.X, cell.Y))).Order().ToList();
+
+            var placing = new List<EditOp> { Placed(busy, 0), Placed(busy, 0.25f) };
+            if (fresh.Count > 0)
+                placing.Add(Placed(fresh[0], 0));
+            else
+                Skip("a decal placed on a chunk of the grid that has none: every chunk with a tile has decals");
+            var was = DecalStep("decals placed", "decals.placed", _before, placing);
+
+            // Every setting at once, where it is.
+            var changed = known[1];
+            was = DecalStep("a decal changed in kind, colour, angle, z-index and cleanable", "decals.changed", was,
+                [Updated(changed with { Prototype = other, Color = "#00FF0080", Angle = changed.Angle + Quarter, ZIndex = changed.ZIndex + 3, Cleanable = !changed.Cleanable })]);
+
+            // Into another chunk: one that had none before the decals placed, if there is one.
+            var moving = known[2];
+            var to = fresh.Count > 0 ? fresh[0] : tiles.Keys.Where(cell => ChunkOf(cell.X, cell.Y) != ChunkOf(moving.X, moving.Y)).Order().FirstOrDefault(Cell(moving.X, moving.Y));
+            was = DecalStep("a decal moved into another chunk", "decals.moved", was,
+                [Updated(moving with { X = to.X + 0.5f, Y = to.Y + 0.5f })]);
+
+            // A chunk left with none: the one with the fewest decals.
+            var now = GridNow();
+            var fewest = now.Decals.GroupBy(decal => ChunkOf(decal.X, decal.Y)).OrderBy(group => group.Count()).ThenBy(group => group.Key).First();
+            was = DecalStep($"the {fewest.Count()} decals of the chunk with the fewest removed", "decals.removed", was,
+                fewest.Select(decal => new EditOp("decal.remove", Grid: _grid, Uid: decal.Id)).ToList());
+
+            // Two removed from the chunk of the first decal and two placed there in one edit.
+            var two = GridNow().Decals.Where(decal => ChunkOf(decal.X, decal.Y) == ChunkOf(busy.X, busy.Y)).OrderBy(decal => decal.Order).Take(2).ToList();
+            was = DecalStep("two decals removed and two placed on their chunk", "decals.again", was,
+                [.. two.Select(decal => new EditOp("decal.remove", Grid: _grid, Uid: decal.Id)), Placed(busy, 0.5f), Placed(busy, 0.125f)]);
+
+            // A chunk entity the file keeps with no decals, as a map saved with the game's mapping
+            // command may: a decal placed on its chunk fills it, and undone leaves it as it was.
+            if (Chunked)
+            {
+                var filled = GridNow().Decals.Select(decal => ChunkOf(decal.X, decal.Y)).ToHashSet();
+                var empty = _fileEmpty.Where(chunk => chunk.Root == _gridYaml && !filled.Contains(chunk.Chunk)).Select(chunk => chunk.Chunk).ToHashSet();
+                var cell = tiles.Keys.Where(cell => empty.Contains(ChunkOf(cell.X, cell.Y))).Order().Select(cell => ((int X, int Y)?) cell).FirstOrDefault();
+                if (cell is { } at)
+                    was = DecalStep("a decal placed on a chunk whose chunk entity the file keeps with no decals", "decals.filled", was, [Placed(at, 0)]);
+                else
+                    Skip("a decal placed on a chunk whose chunk entity the file keeps with no decals: the grid has no such chunk entity on a chunk with a tile");
+            }
+
+            Dragged(was, tiles);
+        }
+
+        /// <summary>
+        /// One drag as the select tool sends it, an edit for each frame merged into one step: a
+        /// decal, the one with the fewest others in its chunk, dragged into another chunk, on
+        /// within it, and back to where it was. The save is the save before to the byte, as are
+        /// the save with the stroke undone and done again, and the decal is as it was.
+        /// </summary>
+        private void Dragged(Saved was, Dictionary<(int X, int Y), TileOn> tiles)
+        {
+            const string what = "a decal dragged into another chunk and back in one stroke";
+            var grid = GridNow();
+            var counts = grid.Decals.GroupBy(decal => ChunkOf(decal.X, decal.Y)).ToDictionary(group => group.Key, group => group.Count());
+            var dragged = grid.Decals
+                .Where(decal => decalKinds.Contains(decal.Prototype) && tiles.ContainsKey(Cell(decal.X, decal.Y)))
+                .OrderBy(decal => counts[ChunkOf(decal.X, decal.Y)]).ThenBy(decal => decal.Id).FirstOrDefault();
+            var home = dragged == null ? default : ChunkOf(dragged.X, dragged.Y);
+            // Over a chunk with decals, if there is one, as near as can be.
+            var over = tiles.Keys.Where(cell => dragged != null && ChunkOf(cell.X, cell.Y) != home)
+                .OrderBy(cell => counts.ContainsKey(ChunkOf(cell.X, cell.Y)) ? 0 : 1)
+                .ThenBy(cell => Math.Abs(cell.X - dragged!.X) + Math.Abs(cell.Y - dragged.Y))
+                .ThenBy(cell => cell)
+                .Select(cell => ((int X, int Y)?) cell).FirstOrDefault();
+            if (dragged == null || over is not { } to)
+            {
+                Skip($"{what}: the grid has no decal of a kind the game has with a tile in another chunk");
+                return;
+            }
+
+            EditOp At(float x, float y) => DecalOp(_grid, dragged, x, y, dragged.Angle);
+            Edit("Move", [At(to.X + 0.5f, to.Y + 0.5f)]);
+            Edit("Move", [At(to.X + 0.25f, to.Y + 0.75f)], merge: true);
+            Edit("Move", [At(dragged.X, dragged.Y)], merge: true);
+            var back = GridNow().Decals.FirstOrDefault(decal => decal.Id == dragged.Id);
+            Expect(back == dragged,
+                $"{what}: the decal is as it was, under its number and in its place in the game's draw order ({counts[home]} decals in its chunk, dragged over one with {counts.GetValueOrDefault(ChunkOf(to.X, to.Y))})",
+                $"{what}: the decal is not as it was: {(back == null ? "it is gone" : $"{back}, not {dragged}")}");
+            Equal(Save("decals.dragged"), was, what, "the save before");
+            Undo();
+            Equal(Save("decals.dragged.undone"), was, $"{what}, undone as one step", "the save before");
+            Redo();
+            Equal(Save("decals.dragged.redone"), was, $"{what}, redone", "the save before");
+        }
+
+        /// <summary>
+        /// One edit of decal ops: the delta has each decal as sent, the save is checked, and the
+        /// edit is undone to the save before and done again.
+        /// </summary>
+        /// <returns>The save with the edit done.</returns>
+        private Saved DecalStep(string what, string tag, Saved was, List<EditOp> ops)
+        {
+            var before = GridNow();
+            var (delta, _) = Edit("Decals", ops);
+            var now = Save(tag);
+
+            var told = delta.Decals.Where(change => change.Grid == _grid).ToLookup(change => change.Id);
+            var created = new Queue<int>(delta.CreatedDecals);
+            var wrong = 0;
+            foreach (var op in ops)
+            {
+                var id = op.Kind == "decal" ? created.Count > 0 ? created.Dequeue() : -1 : op.Uid;
+                var decal = told[id].LastOrDefault()?.Decal;
+                if (op.Kind == "decal.remove" ? decal != null || !told[id].Any()
+                    : decal == null || decal.Prototype != op.Prototype || decal.Color != op.Color || decal.Angle != op.Rotation || decal.ZIndex != op.ZIndex || decal.Cleanable != op.Cleanable || decal.X != op.X || decal.Y != op.Y)
+                    wrong++;
+            }
+
+            Expect(wrong == 0,
+                $"{what}: the delta has each of the {ops.Count} decals as sent",
+                $"{what}: the delta has {wrong} of the {ops.Count} decals other than sent");
+            DecalsAsGame(what, was, now, ops, before, delta.CreatedDecals.ToList());
+            DecalsSaved(what, now);
+
+            Undo();
+            Equal(Save($"{tag}.undone"), was, $"{what}, undone", "the save before");
+            Redo();
+            Equal(Save($"{tag}.redone"), now, $"{what}, redone", "the edited save");
+            return now;
+        }
+
+        /// <summary>
         /// A map can hold a decal of a kind the game does not have. It can be moved and stays the
         /// kind it is. One cannot be made, and no decal can be made into one.
         /// </summary>
@@ -1815,13 +2107,20 @@ public static class RegionCheck
             Kept(what, delta, plan);
 
             // Too many lines differ for the saves to be compared whole. The decals are read out of each.
-            var (was, now) = (DecalLines(_before, grid.YamlUid), DecalLines(moved, grid.YamlUid));
-            var sent = on.Decals.Select(decal => decal.Id).ToHashSet();
-            var wrong = was.Keys.Count(id => !now.TryGetValue(id, out var has) || has.Group != was[id].Group || has.At != was[id].At != sent.Contains(id))
-                + now.Keys.Count(id => !was.ContainsKey(id));
-            Expect(wrong == 0 && sent.All(was.ContainsKey),
-                $"{what}: in the saved file each of the {sent.Count} decals has other coordinates and is written under the kind, colour and angle it was, and none of the other {was.Count - sent.Count} decals differs",
-                $"{what}: in the saved file {wrong} decals are not as expected: a decal moved is to have other coordinates under the kind, colour and angle it had, and any other is to be as it was");
+            if (Chunked)
+            {
+                DecalsAsGame(what, _before, moved, plan.Ops, grid);
+            }
+            else
+            {
+                var (was, now) = (DecalLines(_before, grid.YamlUid), DecalLines(moved, grid.YamlUid));
+                var sent = on.Decals.Select(decal => decal.Id).ToHashSet();
+                var wrong = was.Keys.Count(id => !now.TryGetValue(id, out var has) || has.Group != was[id].Group || has.At != was[id].At != sent.Contains(id))
+                    + now.Keys.Count(id => !was.ContainsKey(id));
+                Expect(wrong == 0 && sent.All(was.ContainsKey),
+                    $"{what}: in the saved file each of the {sent.Count} decals has other coordinates and is written under the kind, colour and angle it was, and none of the other {was.Count - sent.Count} decals differs",
+                    $"{what}: in the saved file {wrong} decals are not as expected: a decal moved is to have other coordinates under the kind, colour and angle it had, and any other is to be as it was");
+            }
 
             var (_, undo) = Undo();
             Equal(Save("large.undone"), _before, $"{what}, undone ({undo.DocumentMs} ms in the document kernel)", "the first save");

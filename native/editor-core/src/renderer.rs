@@ -30,6 +30,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::animation::Cycles;
 use crate::backdrop::{Backdrop, Placing};
+use crate::draw_depths::DepthGroups;
 use crate::drawlist::{DrawLists, Item, FLOATS_PER_QUAD, KIND_DECALS, KIND_DISPOSALS, KIND_MARKER, KIND_PLUMBING, KIND_SUBFLOOR, KIND_TILES, WHITE_TEXTURE};
 use crate::textures::{BakedTextures, Sheet};
 
@@ -79,12 +80,12 @@ pub mod group {
     pub const DISPOSALS: u32 = 10;
 }
 
-/// Which layer an item is in. Entities are divided by the game's draw depth, at the web
-/// editor's boundaries (its `hiddenDepthRanges`), except what
+/// Which layer an item is in. Entities are divided by the game's draw depth, by the fork's
+/// names for its depths (`draw_depths.rs`), except what
 /// the engine says lives under the floor: the game draws that above doors while it is being
 /// shown through the floor, and it is the SubFloor layer all the same. What the engine says is
 /// plumbing is the Plumbing layer, and disposal tubes the Disposals layer, whatever their depth.
-pub fn group_of(kind: u8, depth: i32) -> u32 {
+pub fn group_of(kind: u8, depth: i32, depths: &DepthGroups) -> u32 {
     match kind {
         KIND_TILES => group::TILES,
         KIND_DECALS => group::DECALS,
@@ -92,13 +93,7 @@ pub fn group_of(kind: u8, depth: i32) -> u32 {
         KIND_SUBFLOOR => group::SUBFLOOR,
         KIND_PLUMBING => group::PLUMBING,
         KIND_DISPOSALS => group::DISPOSALS,
-        _ => match depth {
-            i32::MIN..=-13 => group::SUBFLOOR,
-            -12..=-5 => group::FLOOR_OBJECTS,
-            -4..=-1 => group::STRUCTURES,
-            8..=10 => group::DOORS,
-            _ => group::OBJECTS,
-        },
+        _ => depths.group(depth),
     }
 }
 
@@ -942,6 +937,7 @@ impl MapRenderer {
             return prepared;
         }
 
+        let depths = std::sync::Arc::clone(&lists.depths);
         let same_document = self.built.map(|(built, _)| built) == Some(document);
         let (changed, order_changed) = if stale { lists.documents.get_mut(&document).unwrap().take_changes() } else { (Vec::new(), false) };
         // Rebuild the whole buffer, or patch the changed items into it.
@@ -976,7 +972,7 @@ impl MapRenderer {
             let doc = &lists.documents[&document];
             let mut patches: Vec<(usize, Vec<f32>, Vec<u32>)> = Vec::with_capacity(changed.len());
             for id in &changed {
-                let (converted, ids) = doc.items.get(id).map(|item| self.convert_item(item, &mut prepared.missing)).unwrap_or_default();
+                let (converted, ids) = doc.items.get(id).map(|item| self.convert_item(item, &depths, &mut prepared.missing)).unwrap_or_default();
                 match self.ranges.get(id) {
                     Some(&(offset, length)) if length == converted.len() => patches.push((offset, converted, ids)),
                     None if converted.is_empty() => {}
@@ -1011,7 +1007,7 @@ impl MapRenderer {
             self.animation.stale = true;
             for id in order {
                 let item = &doc.items[&id];
-                let (converted, ids) = self.convert_item(item, &mut prepared.missing);
+                let (converted, ids) = self.convert_item(item, &depths, &mut prepared.missing);
                 self.ranges.insert(id, (self.scratch.len(), converted.len()));
                 self.scratch.extend_from_slice(&converted);
                 self.scratch_ids.extend_from_slice(&ids);
@@ -1073,9 +1069,9 @@ impl MapRenderer {
     }
 
     /// An item's rectangles as the GPU takes them, with the texture each was recorded with.
-    fn convert_item(&self, item: &Item, missing: &mut u32) -> (Vec<f32>, Vec<u32>) {
+    fn convert_item(&self, item: &Item, depths: &DepthGroups, missing: &mut u32) -> (Vec<f32>, Vec<u32>) {
         let mut ids = Vec::with_capacity(item.quads.len() / FLOATS_PER_QUAD);
-        let converted = self.convert_with(&item.quads, group_of(item.kind, item.depth), missing, Some(&mut ids));
+        let converted = self.convert_with(&item.quads, group_of(item.kind, item.depth, depths), missing, Some(&mut ids));
         (converted, ids)
     }
 

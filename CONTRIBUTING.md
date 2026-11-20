@@ -58,6 +58,9 @@ Two environment variables help when you work on the interface:
   platform's data folder) at an empty folder as well, so your real settings stay untouched.
 - `SS14_EDITOR_TAB` set to `favourites`, `tiles`, `entities`, `decals`, `prefabs` or `grids`
   opens the side panel on that tab.
+- `SS14_EDITOR_TOOL` set to tool keys presses them as the editor opens, so you can see a
+  tool's options without a click. `O` opens on the Room tool, `S` on Select with Tiles, `P` on
+  Paint placing entities.
 
 ## Testing a change
 

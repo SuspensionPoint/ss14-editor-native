@@ -8,6 +8,8 @@ pub(in crate::session) struct PlaceDrag {
     placed: HashSet<(i32, i32, i32)>,
     /// Whether it lays a row, or places only where it was pressed.
     row: bool,
+    /// Where the cursor was last, on the map, so that a row has no gaps however fast it goes.
+    last: (f32, f32),
 }
 
 /// The web editor's green for the ghost's label, and its light blue with Shift.
@@ -72,6 +74,11 @@ pub(in crate::session) struct Placing {
 }
 
 impl Placing {
+    /// How what is placed next is turned, in radians.
+    pub(super) fn rotation(&self) -> f64 {
+        self.rotation
+    }
+
     /// Turns what is placed next by a step in radians.
     pub(super) fn turn(&mut self, step: f64) {
         self.rotation = (self.rotation + step).rem_euclid(std::f64::consts::TAU);
@@ -89,9 +96,10 @@ impl Placing {
 }
 
 impl Session {
-    /// Chooses the entity the place tool and the brushes put down, and asks the engine how the
-    /// prototype looks from each side. It goes to the place tool, or takes it in hand again,
-    /// unless the tool in hand keeps the choice (`Tool::keeps_entity_choice`). A wall the Room
+    /// Chooses the entity the place tool and the brushes put down, which makes Entities the
+    /// target, and asks the engine how the prototype looks from each side. It goes to Paint in
+    /// its shape, which at a point is the place tool, unless the tool in hand keeps the choice
+    /// (`Tool::keeps_entity_choice`). A wall the Room
     /// tool can build with becomes its wall (`set_room_wall`). With the Room tool in hand such
     /// a wall is that alone: the tile in hand and the tool stay.
     pub fn choose_entity(&mut self, index: usize) {
@@ -107,9 +115,15 @@ impl Session {
             return;
         }
         self.palette = Palette::Entity(index);
+        self.chosen();
         if !self.tool.keeps_entity_choice() {
-            self.set_tool(Tool::Place);
+            self.take_bar_tool(BarTool::Paint);
         }
+        self.want_turned_previews(index);
+    }
+
+    /// Asks the engine how a prototype looks from each side, for its ghost, if not asked yet.
+    pub(super) fn want_turned_previews(&mut self, index: usize) {
         if !self.placing.previews_turned.contains_key(&index) {
             self.placing.previews_turned.insert(index, false);
             if let Some(prototype) = self.prototypes.get(index) {
@@ -161,14 +175,15 @@ impl Session {
 
     /// Where the place tool would put the chosen prototype for a cursor at `world`: the
     /// parent (a grid, or the map), the position in the parent's coordinates, and on the map,
-    /// and how the parent is turned. With Shift held it is the cursor, unless the prototype is
-    /// anchored by default, which goes on the middle of its cell all the same. Off every
-    /// grid's tiles it is the map, except for a prototype that a tile is laid under
+    /// and how the parent is turned. With Snap to cell it is the middle of the cell under the
+    /// cursor, whatever the prototype. Placed freely (`places_free`) it is the cursor, unless
+    /// the prototype is anchored by default, which goes on the middle of its cell all the same.
+    /// Off every grid's tiles it is the map, except for a prototype that a tile is laid under
     /// (`floor_for`), which goes on the grid the tile tools would paint.
     pub(super) fn place_target(&self, world: (f32, f32)) -> Option<(i32, (f32, f32), (f32, f32), f32)> {
         let doc = self.doc.as_ref()?;
         let prototype = self.chosen_prototype()?;
-        let snaps = if self.held.shift { prototype.anchored } else { prototype.snaps() };
+        let snaps = !self.places_free() || prototype.anchored;
         let snap = |local: (f32, f32)| if snaps { (local.0.floor() + 0.5, local.1.floor() + 0.5) } else { local };
         let floored = || self.floor_for(prototype).and_then(|_| doc.grid_at(world));
         Some(match doc.grid_with_tile_at(world).or_else(floored) {
@@ -185,13 +200,17 @@ impl Session {
 
     /// Places the chosen prototype for a cursor at `world`, unless `placed` already has its
     /// cell. On a cell of a grid with no tile it lays the tile `floor_for` gives first, in the
-    /// same edit.
-    fn place_at(&mut self, world: (f32, f32), stroke: u64, placed: &mut HashSet<(i32, i32, i32)>) {
+    /// same edit. In a row (`in_row`) a cell that holds one of the prototype already is skipped,
+    /// as the brushes skip it.
+    fn place_at(&mut self, world: (f32, f32), stroke: u64, placed: &mut HashSet<(i32, i32, i32)>, in_row: bool) {
         let Some((parent, local, _, _)) = self.place_target(world) else { return };
         let Some(prototype) = self.chosen_prototype() else { return };
         let cell = (local.0.floor() as i32, local.1.floor() as i32);
         // One to a cell while dragging; a click always places.
         if !placed.insert((parent, cell.0, cell.1)) {
+            return;
+        }
+        if in_row && self.doc.as_ref().is_some_and(|doc| tiles::cells_holding(doc, parent, &prototype.id).contains(&cell)) {
             return;
         }
         let mut ops = Vec::new();
@@ -212,50 +231,55 @@ impl Session {
         }
     }
 
-    /// Whether Shift is held and puts the chosen prototype where the cursor is. One that is
-    /// anchored by default goes on the middle of its cell all the same.
+    /// Whether a press puts the chosen prototype where the cursor is: the toolbar's option, or
+    /// the other way with Shift held (`places_free`). One that is anchored by default goes on
+    /// the middle of its cell all the same.
     fn shift_frees(&self) -> bool {
-        self.held.shift && self.chosen_prototype().is_some_and(|prototype| !prototype.anchored)
+        self.places_free() && self.chosen_prototype().is_some_and(|prototype| !prototype.anchored)
     }
 
     /// The place tool was pressed: places the chosen prototype under it and begins a row,
-    /// which goes on only for a prototype that sits on cells, pressed without Shift. A press
-    /// with Shift of one that is anchored by default says on the status line why it keeps to
-    /// its cell.
+    /// which goes on only with Snap to cell, pressed without Shift. A press placing freely of
+    /// one that is anchored by default says on the status line why it keeps to its cell.
     pub(super) fn place_down(&mut self, world: (f32, f32)) {
         if self.chosen_entity().is_none() {
             self.hint = Some(Hint::Entity);
         }
         let stroke = self.stroke();
         let mut placed = HashSet::new();
-        self.place_at(world, stroke, &mut placed);
-        if let Some(prototype) = self.chosen_prototype().filter(|prototype| self.held.shift && prototype.anchored) {
+        self.place_at(world, stroke, &mut placed, false);
+        if let Some(prototype) = self.chosen_prototype().filter(|prototype| self.places_free() && prototype.anchored) {
             let status = format!("{} is anchored, so it goes in the middle of its cell", prototype.id);
             self.set_status(status);
         }
-        let row = !self.held.shift && self.chosen_prototype().is_some_and(Prototype::snaps);
-        self.drag = Drag::Place(PlaceDrag { stroke, placed, row });
+        let row = !self.places_free();
+        self.drag = Drag::Place(PlaceDrag { stroke, placed, row, last: world });
     }
 
     /// A place drag went on: places one more under the cursor, only in a row and only once
     /// in each cell.
     pub(super) fn place_dragged(&mut self, world: (f32, f32), drag: PlaceDrag) -> Drag {
-        let PlaceDrag { stroke, mut placed, row } = drag;
+        let PlaceDrag { stroke, mut placed, row, last } = drag;
         if row {
-            self.place_at(world, stroke, &mut placed);
+            // Every quarter of a cell along the way, so that no cell crossed is missed.
+            let steps = ((world.0 - last.0).hypot(world.1 - last.1) * 4.0).ceil().max(1.0) as usize;
+            for step in 1..=steps {
+                let along = step as f32 / steps as f32;
+                self.place_at((last.0 + (world.0 - last.0) * along, last.1 + (world.1 - last.1) * along), stroke, &mut placed, true);
+            }
         }
-        Drag::Place(PlaceDrag { stroke, placed, row })
+        Drag::Place(PlaceDrag { stroke, placed, row, last: world })
     }
 
     /// Where a press of the tool in hand would put the chosen entity, for its ghost. The place
     /// tool puts it where `place_target` says, turned as it is turned. Paint, Rectangle, Line
-    /// and Circle put it on the middle of the cell under the cursor, unturned, which is the
+    /// and Circle put it on the middle of the cell under the cursor, turned the same, which is the
     /// first cell of a press. None during a shape's drag, which shows its cells, and where
     /// `ghost_hover` is None.
     fn ghost_target(&self) -> Option<GhostTarget> {
         let brush = match self.tool {
             Tool::Place => false,
-            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => true,
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Lasso | Tool::Polygon => true,
             Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Area | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => return None,
         };
         if !matches!(self.drag, Drag::None | Drag::Stroke(_) | Drag::Place(_)) {
@@ -268,7 +292,15 @@ impl Session {
             let grid = doc.grid_at(world)?;
             let cell = grid.cell_at(world);
             let at = grid.to_world((cell.0 as f32 + 0.5, cell.1 as f32 + 0.5));
-            return Some(GhostTarget { index, at, square: grid.cells_outline(cell, cell), turns: 0, angle: grid.rotation, facing: None, free: false });
+            return Some(GhostTarget {
+                index,
+                at,
+                square: grid.cells_outline(cell, cell),
+                turns: self.place_turns(),
+                angle: grid.rotation + self.place_turn_past_quarters(),
+                facing: (self.placing.rotation != 0.0).then_some(self.placing.rotation as f32 + grid.rotation),
+                free: false,
+            });
         }
         let (parent, local, at, grid_turned) = self.place_target(world)?;
         Some(GhostTarget {

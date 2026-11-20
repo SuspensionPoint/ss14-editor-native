@@ -1,6 +1,6 @@
 //! The editor's settings, a JSON file in the user data folder: the forks it knows, the maps
-//! opened last, the fork used last, and each fork's favourites and way of placing walls. Later
-//! the keybinds too.
+//! opened last, the fork used last, each fork's favourites and way of placing walls, and the
+//! toolbar's options. Later the keybinds too.
 //!
 //! A settings file that cannot be read is taken as empty. It is written whole each time, beside
 //! its place first, so that a stopped write leaves the old one.
@@ -28,10 +28,13 @@ pub struct Settings {
     /// The forks, by folder, whose maps show the Problems overlay. It is off for the others.
     pub problems_shown: Vec<String>,
     /// How each fork's walls are placed, by its folder: the tile laid under them, the Room
-    /// tool's wall and its Intersection switch.
+    /// tool's wall, its Intersection switch and its shape.
     pub placing: Vec<ForkPlacing>,
     /// Whether animated sprites move (View > Animate sprites). Off until a mapper turns it on.
     pub animate_sprites: bool,
+    /// The toolbar's options: the shape of Paint and of Erase, what Select selects, and
+    /// whether Paint puts entities where the cursor is. The same for every fork.
+    pub tools: crate::toolbox::ToolOptions,
 }
 
 /// How one fork's walls are placed. A fork with no entry places them as `ForkPlacing::default`.
@@ -49,6 +52,8 @@ pub struct ForkPlacing {
     /// Whether the Room tool joins a new room to the rooms it overlaps (its Intersection
     /// switch), in the place of keeping them separate.
     pub room_intersection: bool,
+    /// The shape the Room tool builds rooms in.
+    pub room_shape: crate::toolbox::RoomShape,
 }
 
 /// The tile laid under walls until a mapper picks another.
@@ -56,7 +61,7 @@ pub const PLATING: &str = "Plating";
 
 impl Default for ForkPlacing {
     fn default() -> Self {
-        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None, room_intersection: false }
+        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None, room_intersection: false, room_shape: crate::toolbox::RoomShape::Rectangle }
     }
 }
 

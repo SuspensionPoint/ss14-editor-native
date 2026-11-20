@@ -52,6 +52,7 @@ impl Session {
             Tool::Rectangle => HoverLook::edge([0x44, 0x88, 0xff, 255]),
             Tool::Line => HoverLook::edge([0xff, 0xcc, 0x00, 255]),
             Tool::Circle => HoverLook::edge([0x00, 0xcc, 0xff, 255]),
+            Tool::Lasso | Tool::Polygon => HoverLook::edge([0x00, 0xff, 0x00, 255]),
             Tool::Room => HoverLook::edge([0xff, 0x88, 0x44, 255]),
             Tool::Cable => {
                 let (red, green, blue) = self.cable_kind().colour();

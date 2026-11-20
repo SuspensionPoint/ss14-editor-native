@@ -25,10 +25,10 @@ const OFFERED: usize = 8;
 const SHORT_LIST: usize = 4;
 
 /// The small buttons of the panel.
-const SMALL: &str = "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover";
+const SMALL: &str = "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover";
 
 /// A small button that is the choice made, or a switch that is on.
-const CHOSEN: &str = "px-1.5 py-0.5 rounded-sm border border-accent text-accent text-[10px] cursor-pointer bg-active";
+const CHOSEN: &str = "px-1.5 py-0.5 rounded-sm border border-accent text-accent text-[11px] cursor-pointer bg-active";
 
 /// What the panel keeps while one entity is edited. Selecting another starts it afresh.
 #[derive(Default)]
@@ -63,7 +63,7 @@ pub(crate) fn EntityEditor(uid: i32) -> Element {
     });
     rsx! {
         if let Some(error) = error {
-            div { class: "text-[10px] mt-1", style: "color: {REFUSED};", "{error}" }
+            div { class: "text-[11px] mt-1", style: "color: {REFUSED};", "{error}" }
         }
         NameField { uid }
         Containers {}
@@ -141,12 +141,12 @@ fn Containers() -> Element {
     });
     let Some(found) = found else { return rsx! {} };
     let (rows, adding, search, offers) = match found {
-        Err(why) => return rsx! { div { class: "text-muted text-[10px] mt-2", "Couldn't read the containers: {why}" } },
+        Err(why) => return rsx! { div { class: "text-muted text-[11px] mt-2", "Couldn't read the containers: {why}" } },
         Ok(found) => found,
     };
     rsx! {
         div { class: "mt-2",
-            div { class: "text-muted text-[10px] mb-1", "Containers" }
+            div { class: "text-muted text-[11px] mb-1", "Containers" }
             for (id, kind, count, can_insert, held) in rows {
                 {
                     let open = adding.as_deref() == Some(id.as_str());
@@ -155,7 +155,7 @@ fn Containers() -> Element {
                         div { key: "{id}", class: "mb-1",
                             div { class: "flex items-center gap-1.5",
                                 span { class: "text-primary text-[11px]", "{id}" }
-                                span { class: "text-muted text-[10px] flex-1", "{kind}, {count} held" }
+                                span { class: "text-muted text-[11px] flex-1", "{kind}, {count} held" }
                                 button { class: SMALL, disabled: !can_insert, title: if can_insert { "" } else { "The slot is full" },
                                     onclick: move |_| {
                                         with(|editor| {
@@ -185,7 +185,7 @@ fn Containers() -> Element {
                                         {
                                             let container = id.clone();
                                             rsx! {
-                                                button { key: "{prototype}", class: "flex items-center gap-1.5 w-full px-2 py-1 text-left border-none bg-transparent text-primary text-[10px] cursor-pointer hover:bg-hover",
+                                                button { key: "{prototype}", class: "flex items-center gap-1.5 w-full px-2 py-1 text-left border-none bg-transparent text-primary text-[11px] cursor-pointer hover:bg-hover",
                                                     onclick: move |_| {
                                                         with(|editor| {
                                                             editor.session.contain(&container, &prototype);
@@ -195,7 +195,7 @@ fn Containers() -> Element {
                                                         bump();
                                                     },
                                                     span { class: "truncate", "{name}" }
-                                                    span { class: "text-muted ml-auto text-[9px]", "{prototype}" }
+                                                    span { class: "text-muted ml-auto text-[11px]", "{prototype}" }
                                                 }
                                             }
                                         }
@@ -223,7 +223,7 @@ fn Components() -> Element {
         (entries, editor.session.entity_busy(), editor.entity_panel.open.clone(), editor.entity_panel.json.clone(), editor.entity_panel.component_search.clone(), offers, error)
     });
     if entries.is_empty() {
-        return rsx! { div { class: "text-muted text-[10px] mt-2", "Reading components..." } };
+        return rsx! { div { class: "text-muted text-[11px] mt-2", "Reading components..." } };
     }
     let own = entries.iter().filter(|entry| entry.own).count();
     let count = if entries.len() == 1 { "1 component".to_owned() } else { format!("{} components", entries.len()) };
@@ -239,9 +239,9 @@ fn Components() -> Element {
     rsx! {
         div { class: "mt-2",
             if let Some(why) = error {
-                div { class: "text-muted text-[10px]", "Forms unavailable: {why}" }
+                div { class: "text-muted text-[11px]", "Forms unavailable: {why}" }
             }
-            div { class: "text-muted text-[10px]", "{count}, {own} with data of their own" }
+            div { class: "text-muted text-[11px]", "{count}, {own} with data of their own" }
             for entry in entries {
                 {
                     let name = entry.row.name.clone();
@@ -253,11 +253,11 @@ fn Components() -> Element {
         // Adding a component, from the names the prototypes have.
         div { class: "mt-1 flex gap-0.5 items-center",
             TextField { value: search, placeholder: "Add a component...",
-                class: "bg-elevated border border-subtle rounded-sm text-primary text-[10px] px-1 py-0.5 flex-1 w-full outline-none focus:border-accent",
+                class: "bg-elevated border border-subtle rounded-sm text-primary text-[11px] px-1 py-0.5 flex-1 w-full outline-none focus:border-accent",
                 oninput: move |text: String| { with(|editor| editor.entity_panel.component_search = text); bump(); },
                 onenter: move |_| add(),
             }
-            button { class: "bg-active border border-subtle rounded-sm text-primary text-[10px] px-1.5 py-px cursor-pointer", disabled: busy, onclick: move |_| add(), "Add" }
+            button { class: "bg-active border border-subtle rounded-sm text-primary text-[11px] px-1.5 py-px cursor-pointer", disabled: busy, onclick: move |_| add(), "Add" }
         }
         if !offers.is_empty() {
             div { class: "flex gap-1 mt-1", style: "flex-wrap: wrap;",
@@ -298,8 +298,8 @@ fn ComponentBox(entry: ComponentEntry, busy: bool, shown: bool, json: bool) -> E
             }
             if shown {
                 if row.reserved {
-                    pre { class: "my-0.5 ml-3 whitespace-pre-wrap", style: "font-size: 9px; color: #999;", "{row.text}" }
-                    div { class: "text-muted text-[10px] ml-3", "Moving, turning or renaming the entity changes this." }
+                    pre { class: "my-0.5 ml-3 whitespace-pre-wrap", style: "font-size: 11px; color: #a3aab6;", "{row.text}" }
+                    div { class: "text-muted text-[11px] ml-3", "Moving, turning or renaming the entity changes this." }
                 } else {
                     if let Some(fields) = fields {
                         div { class: "ml-2",
@@ -329,7 +329,7 @@ fn ComponentBox(entry: ComponentEntry, busy: bool, shown: bool, json: bool) -> E
                     }
                     if text_shown {
                         textarea { class: "w-full bg-surface border border-subtle rounded-sm text-primary font-mono outline-none focus:border-accent",
-                            style: "font-size: 10px; height: {lines * 14 + 8}px;",
+                            style: "font-size: 11px; height: {lines * 15 + 8}px;",
                             value: "{row.text}",
                             onfocus: move |_| with(|editor| editor.typing = true),
                             onblur: move |_| with(|editor| editor.typing = false),
@@ -476,7 +476,7 @@ fn FieldLine(component: String, field: FieldRow, busy: bool) -> Element {
             let send = send.clone();
             rsx! {
                 textarea { class: "w-full bg-surface border border-subtle rounded-sm text-primary font-mono outline-none focus:border-accent",
-                    style: "font-size: 10px; height: {lines * 14 + 8}px;",
+                    style: "font-size: 11px; height: {lines * 15 + 8}px;",
                     value: "{shown}",
                     disabled,
                     onfocus: move |_| with(|editor| editor.typing = true),
@@ -519,11 +519,11 @@ fn FieldLine(component: String, field: FieldRow, busy: bool) -> Element {
     let reset = send.clone();
     rsx! {
         div { class: "flex items-center gap-1.5 py-px",
-            span { class: "text-[10px]", style: "width: 90px; flex-shrink: 0; overflow: hidden; {label}", "{field.tag}" }
+            span { class: "text-[11px]", style: "width: 90px; flex-shrink: 0; overflow: hidden; {label}", "{field.tag}" }
             div { class: "flex items-center gap-1 flex-1 min-w-0", style: "flex-wrap: wrap;",
                 {widget}
                 if field.read_only {
-                    span { class: "text-muted text-[9px]", "read-only" }
+                    span { class: "text-muted text-[11px]", "read-only" }
                 }
             }
             if field.own {

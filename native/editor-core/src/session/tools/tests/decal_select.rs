@@ -194,13 +194,14 @@ fn pick_takes_a_decal_with_its_settings_before_the_tile() {
         let decal = session.doc.as_mut().unwrap().grids[0].decals.get_mut(&2).unwrap();
         (decal.color, decal.angle, decal.z_index, decal.cleanable) = (Some("#11223344".into()), 1.0, 4, true);
     }
-    session.set_decal_settings(DecalSettings { snap: false, ..Default::default() });
+    session.set_place_free(true);
     session.set_tool(Tool::Pick);
     click(&mut session, (1.5, 4.5));
 
     assert_eq!((session.chosen_decal(), session.tool(), session.status_line()), (Some("Arrows"), Tool::Paint, "Picked Arrows"));
-    // The decal's colour and the rest, and snap as it was.
-    assert_eq!(session.decal_settings(), &DecalSettings { color: Some("#11223344".into()), angle: 1.0, z_index: 4, snap: false, cleanable: true });
+    // The decal's colour and the rest, and free placing as it was.
+    assert_eq!(session.decal_settings(), &DecalSettings { color: Some("#11223344".into()), angle: 1.0, z_index: 4, cleanable: true });
+    assert!(session.place_free());
 
     // The wheel's list has both arrows and then the tile.
     session.set_tool(Tool::Pick);

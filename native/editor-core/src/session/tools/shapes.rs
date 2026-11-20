@@ -1,5 +1,7 @@
 //! The line and circle tools: a shape dragged out from the cell pressed to the cursor's cell,
-//! with the cells as the web editor gives them.
+//! with the cells as the web editor gives them. A circle, as every closed shape of Paint and
+//! Erase, may be just its edge (`edge_cells`), as the options bar's Fill or Outline says at the
+//! press.
 
 use super::tiles::Brush;
 use super::*;
@@ -27,6 +29,16 @@ pub(in crate::session) struct ShapeDrag {
     to: (i32, i32),
     /// None when nothing it can put down was chosen at the press. It sets nothing then.
     brush: Option<Brush>,
+    /// Whether a circle is just its ring (Outline). A line is always its cells.
+    outline: bool,
+}
+
+/// The cells of a set that touch a cell outside it side by side: its edge, in the set's own
+/// order. A rectangle's edge is its border and a circle's its ring. A set too thin to have an
+/// inside is all edge.
+pub(super) fn edge_cells(cells: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    let set: HashSet<(i32, i32)> = cells.iter().copied().collect();
+    cells.iter().copied().filter(|&(x, y)| [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)].iter().any(|next| !set.contains(next))).collect()
 }
 
 /// The cells of a line from one cell to another, both ends included. This is the web
@@ -115,29 +127,32 @@ impl Shape {
 }
 
 impl ShapeDrag {
-    /// The cells it covers now.
+    /// The cells it covers now: a circle's ring alone with Outline.
     fn cells(&self) -> Vec<(i32, i32)> {
         match self.shape {
             Shape::Line => line_cells(self.from, self.to),
+            Shape::Circle if self.outline => edge_cells(&disc_cells(self.from, radius(self.from, self.to))),
             Shape::Circle => disc_cells(self.from, radius(self.from, self.to)),
         }
     }
 
     /// Its grid, its cells and the entity it puts down, if it puts one down.
     pub(super) fn entity_cells(&self) -> Option<(i32, Vec<(i32, i32)>, usize)> {
-        let Some(Brush::Entity(index)) = self.brush else { return None };
-        Some((self.grid, self.cells(), index))
+        let Some(Brush::Entity(index)) = &self.brush else { return None };
+        Some((self.grid, self.cells(), *index))
     }
 }
 
 impl Session {
-    /// The line or circle tool was pressed: begins its shape at the cell under it.
+    /// The line or circle tool, or the eraser in that shape, was pressed: begins its shape at
+    /// the cell under it.
     pub(super) fn shape_down(&mut self, world: (f32, f32), shape: Shape) {
         // With nothing it can put down chosen the shape is dragged out all the same, and sets
         // nothing when it is let go.
         let brush = self.brush_for_press();
+        let outline = shape == Shape::Circle && self.press_outline();
         if let Some((grid, cell)) = self.cell_at(world) {
-            self.drag = Drag::Shape(ShapeDrag { shape, grid, from: cell, to: cell, brush });
+            self.drag = Drag::Shape(ShapeDrag { shape, grid, from: cell, to: cell, brush, outline });
         }
     }
 

@@ -147,7 +147,7 @@ pub(crate) fn Collapsible(title: String, children: Element) -> Element {
     rsx! {
         div { class: "flex flex-col border-b border-subtle",
             // The triangle on the left, as on every row that opens: the one sign of it.
-            button { class: "flex items-center gap-2 w-full px-3 py-1.5 bg-surface hover:bg-hover text-primary text-xs font-medium cursor-pointer select-none border-none outline-none",
+            button { class: "section-head select-none outline-none",
                 onclick: move |_| open.toggle(),
                 span { class: "text-muted flex items-center justify-center", style: "width: 8px;", Chevron { open: open() } }
                 span { "{title}" }
@@ -162,33 +162,25 @@ pub(crate) fn Collapsible(title: String, children: Element) -> Element {
 #[component]
 pub(crate) fn SidePanel() -> Element {
     let _ = watch();
-    let (tab, selected, laying, rooming, tile_search, chosen_tile, tiles, starred_tiles) = with(|editor| {
+    let (tab, selected, tile_search, chosen_tile, tiles, starred_tiles) = with(|editor| {
         let session = &editor.session;
         let selected = session.doc.is_some() && !(session.selection.is_empty() && session.selected_decals.is_empty());
         let starred: Vec<String> = session.favourites().into_iter().filter(|row| row.favourite.kind == FavouriteKind::Tile).map(|row| row.favourite.id).collect();
-        (editor.tab, selected, session.tool().is_infrastructure_tool(), session.tool() == editor_core::session::Tool::Room, editor.tile_search.clone(), session.chosen_tile().map(str::to_owned), session.tiles.len(), starred)
+        (editor.tab, selected, editor.tile_search.clone(), session.chosen_tile().map(str::to_owned), session.tiles.len(), starred)
     });
     let tabs = [(PaletteTab::Tiles, "Tiles"), (PaletteTab::Entities, "Entities"), (PaletteTab::Decals, "Decals"), (PaletteTab::Prefabs, "Prefabs"), (PaletteTab::Grids, "Grids")];
     rsx! {
         div { class: "flex flex-col min-w-[280px] max-w-[400px] w-[20vw] bg-panel border-l border-subtle overflow-hidden",
-            // The web editor's order: what is selected while anything is, then the cable and
-            // pipe choices while either tool is in hand, then the palette, then the layers. The
-            // Room tool's panel goes where the cable and pipe choices do.
+            // What is selected while anything is, then the palette, then the layers. The
+            // tools' own choices are in the options bar.
             if selected {
                 Collapsible { title: "Selection", crate::selection::SelectionPanel {} }
             }
-            if laying {
-                Collapsible { title: "Infrastructure", crate::selection::InfrastructurePanel {} }
-            }
-            if rooming {
-                Collapsible { title: "Room", crate::placing::RoomPanel {} }
-            }
             div { class: "flex-1 flex flex-col overflow-hidden",
-                div { class: "flex border-b border-subtle bg-surface",
+                div { class: "tabs",
                     // The favourites first, a star alone for its name, as six names do not fit.
                     button {
-                        class: if tab == PaletteTab::Favourites { "flex items-center justify-center py-1.5 cursor-pointer border-none border-b-2 bg-active border-accent" } else { "flex items-center justify-center py-1.5 cursor-pointer border-none border-b-2 bg-surface border-transparent" },
-                        style: "flex: 0 0 34px;",
+                        class: if tab == PaletteTab::Favourites { "tab star on" } else { "tab star" },
                         onclick: move |_| {
                             with(|editor| editor.tab = PaletteTab::Favourites);
                             bump();
@@ -197,7 +189,7 @@ pub(crate) fn SidePanel() -> Element {
                     }
                     for (each, name) in tabs {
                         button {
-                            class: if each == tab { "flex-1 py-1.5 text-[11px] cursor-pointer border-none border-b-2 bg-active text-white font-bold border-accent" } else { "flex-1 py-1.5 text-[11px] cursor-pointer border-none border-b-2 bg-surface text-muted font-normal border-transparent hover:text-primary" },
+                            class: if each == tab { "tab on" } else { "tab" },
                             onclick: move |_| {
                                 with(|editor| editor.tab = each);
                                 bump();
@@ -225,7 +217,7 @@ pub(crate) fn SidePanel() -> Element {
 fn ChosenLine(chosen: Option<String>) -> Element {
     rsx! {
         if let Some(id) = chosen {
-            div { class: "px-2 pb-2 border-b border-subtle text-[11px] text-primary", "Selected: ", strong { "{id}" } }
+            div { class: "px-3 py-2 border-b border-subtle text-xs text-muted", "In hand: ", strong { class: "text-primary", "{id}" } }
         }
     }
 }
@@ -245,7 +237,7 @@ fn HoverCard(x: f64, y: f64, picture: Option<String>, name: String, more: Vec<St
             }
             div { class: "text-primary text-[11px] text-center mt-1", style: "max-width: {size}px;", "{name}" }
             for line in more {
-                div { class: "text-muted text-[10px]", style: "max-width: 240px;", "{line}" }
+                div { class: "text-muted text-[11px]", style: "max-width: 240px;", "{line}" }
             }
         }
     }
@@ -286,7 +278,7 @@ fn FavouritesPalette() -> Element {
                 let picture = match (row.favourite.kind, row.state) {
                     (FavouriteKind::Tile, FavouriteState::Here(index)) => {
                         let sprite = session.tiles[index].sprite.clone();
-                        thumbs.tile(textures, &row.favourite.id, sprite.as_deref(), 32)
+                        thumbs.tile(textures, sprite.as_deref(), 32)
                     }
                     (FavouriteKind::Entity, FavouriteState::Here(index)) => thumbs.entity(session, textures, index, 32),
                     (FavouriteKind::Decal, FavouriteState::Here(index)) => thumbs.decal(session, textures, index),
@@ -308,7 +300,6 @@ fn FavouritesPalette() -> Element {
     let count = rows.len();
     rsx! {
         div { class: "flex flex-col flex-1 overflow-hidden",
-            div { class: "px-2 pt-2 pb-1 text-xs text-muted", "Favourites" }
             if rows.is_empty() {
                 div { class: "text-muted text-xs p-3 text-center", style: "line-height: 1.6;",
                     div { class: "flex justify-center mb-2", Star { filled: false, size: 20 } }
@@ -321,7 +312,7 @@ fn FavouritesPalette() -> Element {
                     FavouriteLine { key: "{row.at}", row }
                 }
             }
-            div { class: "px-2 py-1 text-[10px] text-muted border-t border-subtle", "{count} favourites" }
+            div { class: "px-2 py-1 text-[11px] text-muted border-t border-subtle", "{count} favourites" }
         }
     }
 }
@@ -352,7 +343,7 @@ fn FavouriteLine(row: FavouriteRowData) -> Element {
             }
             span { class: "flex flex-col overflow-hidden flex-1",
                 span { class: "truncate", style: "font-size: 13px;", "{name}" }
-                span { class: "truncate text-muted", style: "font-size: 10.5px;",
+                span { class: "truncate text-muted", style: "font-size: 11px;",
                     if missing { "{kind} (not in this fork)" } else { "{kind}" }
                 }
             }
@@ -403,7 +394,7 @@ fn TilePalette(search: String, chosen: Option<String>, count: usize, starred: Ve
             .iter()
             .map(|&index| &session.tiles[index])
             .filter(|tile| wanted.is_empty() || tile.id.to_lowercase().contains(&wanted))
-            .map(|tile| (tile.id.clone(), thumbs.tile(textures, &tile.id, tile.sprite.as_deref(), 32)))
+            .map(|tile| (tile.id.clone(), thumbs.tile(textures, tile.sprite.as_deref(), 32)))
             .collect()
     });
     let shown = tiles.len();
@@ -411,14 +402,13 @@ fn TilePalette(search: String, chosen: Option<String>, count: usize, starred: Ve
         let picture = with(|editor| {
             let sprite = editor.session.tiles.iter().find(|tile| tile.id == id).and_then(|tile| tile.sprite.clone());
             let Editor { textures, thumbs, .. } = editor;
-            thumbs.tile(textures, &id, sprite.as_deref(), BIG)
+            thumbs.tile(textures, sprite.as_deref(), BIG)
         });
         (id, x, y, picture)
     });
     let _ = count;
     rsx! {
         div { class: "flex-1 bg-surface flex flex-col overflow-hidden",
-            div { class: "px-2 pt-2 pb-1 text-xs text-muted", "Tiles" }
             ChosenLine { chosen: chosen.clone() }
             div { class: "px-2 py-1",
                 TextField { value: search.clone(), placeholder: "Search tiles...", oninput: move |text: String| { with(|editor| editor.tile_search = text); bump(); } }
@@ -428,7 +418,7 @@ fn TilePalette(search: String, chosen: Option<String>, count: usize, starred: Ve
                     TileButton { key: "{id}", chosen: chosen.as_deref() == Some(id.as_str()), starred: starred.contains(&id), id, picture, hovered }
                 }
             }
-            div { class: "px-2 py-1 text-[10px] text-muted border-t border-subtle", "{shown} tiles" }
+            div { class: "px-2 py-1 text-[11px] text-muted border-t border-subtle", "{shown} tiles" }
         }
         if let Some((id, x, y, picture)) = card {
             HoverCard { x, y, picture, name: id, more: Vec::new() }
@@ -569,7 +559,6 @@ fn EntityPalette() -> Element {
 
     rsx! {
         div { class: "flex flex-col flex-1 overflow-hidden",
-            div { class: "px-2 pt-2 pb-1 text-xs text-muted", "Entities" }
             ChosenLine { chosen: chosen_id }
             div { class: "m-1",
                 TextField { value: search, placeholder: "Search entities...", oninput: move |text: String| { with(|editor| editor.entity_search = text); bump(); } }
@@ -590,7 +579,7 @@ fn EntityPalette() -> Element {
                         match row {
                             EntityRowData::Category { path, short, count, open } => rsx! {
                                 button { key: "c{path}",
-                                    class: "flex items-center px-2 py-1 text-[10px] uppercase tracking-wider text-muted bg-surface cursor-pointer hover:bg-hover select-none w-full text-left border-none",
+                                    class: "flex items-center px-2 py-1 text-[11px] uppercase tracking-wider text-muted bg-surface cursor-pointer hover:bg-hover select-none w-full text-left border-none",
                                     style: "position: absolute; left: 0; right: 0; top: {at}px; height: {CATEGORY_ROW - 2.0}px;",
                                     onclick: move |_| {
                                         with(|editor| {
@@ -625,7 +614,7 @@ fn EntityPalette() -> Element {
                                     }
                                     span { class: "flex flex-col overflow-hidden flex-1",
                                         span { class: "truncate", style: "font-size: 13px;", "{name}" }
-                                        span { class: "truncate text-muted", style: "font-size: 10.5px;", "{id}" }
+                                        span { class: "truncate text-muted", style: "font-size: 11px;", "{id}" }
                                     }
                                     FavouriteStar { favourite: Favourite::new(FavouriteKind::Entity, id.clone()), on: starred }
                                 }
@@ -634,8 +623,7 @@ fn EntityPalette() -> Element {
                     }
                 }
             }
-            div { class: "px-2 py-1 text-[10px] text-muted border-t border-subtle", "{count_text}" }
-            crate::placing::WallPlacement {}
+            div { class: "px-2 py-1 text-[11px] text-muted border-t border-subtle", "{count_text}" }
         }
         if let Some((x, y, picture, name, more)) = card {
             HoverCard { x, y, picture, name, more }
@@ -716,7 +704,6 @@ fn DecalPalette() -> Element {
 
     rsx! {
         div { class: "flex flex-col flex-1 overflow-hidden",
-            div { class: "px-2 pt-2 pb-1 text-xs text-muted", "Decals" }
             ChosenLine { chosen: chosen.clone() }
             div { class: "m-1",
                 TextField { value: search, placeholder: "Search decals...", oninput: move |text: String| { with(|editor| editor.decal_search = text); bump(); } }
@@ -734,7 +721,7 @@ fn DecalPalette() -> Element {
                     } else {
                         for (tag, decals, open) in groups {
                             button { key: "g{tag}",
-                                class: "flex items-center px-2 py-1 text-[10px] uppercase tracking-wider text-muted bg-surface cursor-pointer hover:bg-hover select-none w-full text-left border-none",
+                                class: "flex items-center px-2 py-1 text-[11px] uppercase tracking-wider text-muted bg-surface cursor-pointer hover:bg-hover select-none w-full text-left border-none",
                                 onclick: {
                                     let tag = tag.clone();
                                     move |_| {
@@ -761,68 +748,10 @@ fn DecalPalette() -> Element {
                     }
                 }
             }
-            div { class: "px-2 py-1 text-[10px] text-muted border-t border-subtle", "{total} decals" }
-            DecalPlacement {}
+            div { class: "px-2 py-1 text-[11px] text-muted border-t border-subtle", "{total} decals" }
         }
         if let Some((x, y, picture, name, more)) = card {
             HoverCard { x, y, picture, name, more }
-        }
-    }
-}
-
-/// The placement settings, as the web editor has them under its decal palette. A colour is
-/// typed as #RRGGBBAA: Blitz has no colour picker.
-#[component]
-fn DecalPlacement() -> Element {
-    let _ = watch();
-    let settings = with(|editor| editor.session.decal_settings().clone());
-    let set = |change: Box<dyn FnOnce(&mut editor_core::session::DecalSettings)>| {
-        with(|editor| {
-            let mut settings = editor.session.decal_settings().clone();
-            change(&mut settings);
-            editor.session.set_decal_settings(settings);
-        });
-        bump();
-    };
-    let degrees = format!("{:.1}", settings.angle.to_degrees());
-    let swatch = settings.color.as_deref().and_then(decal_colour_bytes).map(|[red, green, blue, alpha]| format!("rgba({red}, {green}, {blue}, {})", alpha as f32 / 255.0));
-    rsx! {
-        div { class: "border-t border-subtle px-2 py-2 space-y-1.5",
-            div { class: "text-[10px] text-muted uppercase tracking-wider", "Placement" }
-            div { class: "flex items-center gap-2",
-                label { class: "text-[11px] text-primary w-12", "Colour" }
-                input { r#type: "checkbox", class: "check", checked: settings.color.is_some(),
-                    oninput: move |event| {
-                        let on = event.checked();
-                        set(Box::new(move |settings| settings.color = on.then(|| "#FFFFFFFF".to_owned())));
-                    }
-                }
-                if let Some(text) = settings.color.clone() {
-                    span { class: "w-6 h-6 border border-subtle rounded-sm", style: "background: {swatch.clone().unwrap_or_default()}; width: 16px; height: 16px;" }
-                    ColourField { value: text, onchange: move |text: String| set(Box::new(move |settings| settings.color = Some(text))) }
-                } else {
-                    span { class: "text-[10px] text-muted", "the decal's own" }
-                }
-            }
-            div { class: "flex items-center gap-2",
-                label { class: "text-[11px] text-primary w-12", "Angle" }
-                NumberField { value: degrees, onchange: move |value: f64| set(Box::new(move |settings| settings.angle = value.clamp(0.0, 360.0).to_radians())) }
-                span { class: "text-[10px] text-muted", "deg" }
-            }
-            div { class: "flex items-center gap-2",
-                label { class: "text-[11px] text-primary w-12", "Z-index" }
-                NumberField { value: settings.z_index.to_string(), onchange: move |value: f64| set(Box::new(move |settings| settings.z_index = value.round() as i32)) }
-            }
-            div { class: "flex items-center gap-4",
-                label { class: "flex items-center gap-1 text-[11px] text-primary cursor-pointer",
-                    input { r#type: "checkbox", class: "check", checked: settings.snap, oninput: move |event| { let on = event.checked(); set(Box::new(move |settings| settings.snap = on)); } }
-                    "Snap"
-                }
-                label { class: "flex items-center gap-1 text-[11px] text-primary cursor-pointer",
-                    input { r#type: "checkbox", class: "check", checked: settings.cleanable, oninput: move |event| { let on = event.checked(); set(Box::new(move |settings| settings.cleanable = on)); } }
-                    "Cleanable"
-                }
-            }
         }
     }
 }

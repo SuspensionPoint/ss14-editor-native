@@ -9,7 +9,7 @@ use editor_core::session::LinkKind;
 use crate::dialogs::Triangle;
 use crate::{bump, watch, with};
 
-const SMALL: &str = "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[10px] cursor-pointer bg-elevated hover:bg-hover";
+const SMALL: &str = "px-1.5 py-0.5 rounded-sm border border-subtle text-primary text-[11px] cursor-pointer bg-elevated hover:bg-hover";
 
 /// What a click in the links asks for.
 #[derive(Clone, PartialEq)]
@@ -62,22 +62,22 @@ pub(crate) fn LinksSection(uid: i32) -> Element {
             div { class: "font-bold text-xs mb-1", "Links" }
             for (index, (mark, other, label, ports, remove)) in lines.into_iter().enumerate() {
                 div { key: "{index}", class: "flex items-center gap-1.5 py-px",
-                    span { class: "text-muted text-[10px] flex items-center",
+                    span { class: "text-muted text-[11px] flex items-center",
                         match mark {
                             "to" => rsx! { Triangle { towards: "right" } },
                             "from" => rsx! { Triangle { towards: "left" } },
                             _ => rsx! { "{mark}" },
                         }
                     }
-                    button { class: "bg-transparent border-none text-accent text-[10px] cursor-pointer p-0", title: "Go to it",
+                    button { class: "bg-transparent border-none text-accent text-[11px] cursor-pointer p-0", title: "Go to it",
                         onclick: move |_| ask(Row::Jump(other)),
                         "{label}"
                     }
                     if !ports.0.is_empty() {
-                        span { class: "text-muted text-[10px]", "{ports.0}" }
+                        span { class: "text-muted text-[11px]", "{ports.0}" }
                     }
                     if let Some(ids) = ports.1 {
-                        span { class: "text-muted text-[9px] font-mono opacity-60", "{ids}" }
+                        span { class: "text-muted text-[11px] font-mono opacity-60", "{ids}" }
                     }
                     button { class: "bg-transparent border-none text-[11px] cursor-pointer px-1 ml-auto", style: "color: #cc4444;", title: "Remove",
                         onclick: move |_| ask(remove.clone()),
@@ -86,7 +86,7 @@ pub(crate) fn LinksSection(uid: i32) -> Element {
                 }
             }
             if alarm {
-                button { class: "w-full px-1.5 py-1 rounded-sm text-[10px] cursor-pointer border border-subtle bg-elevated hover:bg-hover text-primary mt-1",
+                button { class: "w-full px-1.5 py-1 rounded-sm text-[11px] cursor-pointer border border-subtle bg-elevated hover:bg-hover text-primary mt-1",
                     title: "Add every device in the alarm's room to its list",
                     onclick: move |_| { with(|editor| editor.session.auto_link_room()); bump(); },
                     "Auto-link room"
@@ -148,7 +148,7 @@ pub(crate) fn LinkDialog() -> Element {
     };
     let chosen_name = |chosen: &Option<String>, ports: &Shown| chosen.as_ref().map_or_else(|| "none".to_owned(), |port| ports.iter().find(|(id, ..)| id == port).map_or_else(|| port.clone(), |(_, name, _)| name.clone()));
     let ready = chooser.source_port.is_some() && chooser.sink_port.is_some() && !chooser.waiting;
-    let muted = "text-muted text-[10px]";
+    let muted = "text-muted text-[11px]";
     rsx! {
         div { class: "fixed bg-elevated border border-subtle rounded-lg p-3 text-primary text-xs shadow-lg",
             style: "right: 340px; top: 40px; width: 300px; z-index: 300;",
@@ -188,7 +188,7 @@ pub(crate) fn LinkDialog() -> Element {
                                         },
                                         span { "{name}" }
                                         if let Some(id) = id {
-                                            span { class: "text-muted text-[10px] font-mono", "{id}" }
+                                            span { class: "text-muted text-[11px] font-mono", "{id}" }
                                         }
                                     }
                                 }
@@ -201,9 +201,9 @@ pub(crate) fn LinkDialog() -> Element {
                         for (link, (names, ids)) in existing.clone() {
                             div { class: "flex items-center gap-2",
                                 div { class: "flex-1 flex items-center gap-1.5",
-                                    span { class: "text-[10px]", "{names}" }
+                                    span { class: "text-[11px]", "{names}" }
                                     if let Some(ids) = ids {
-                                        span { class: "text-muted text-[9px] font-mono", "{ids}" }
+                                        span { class: "text-muted text-[11px] font-mono", "{ids}" }
                                     }
                                 }
                                 button { class: SMALL, disabled: chooser.waiting, onclick: move |_| ask(Asked::Unlink(link.clone())), "Unlink" }
@@ -213,7 +213,7 @@ pub(crate) fn LinkDialog() -> Element {
                 },
             }
             if let Some(error) = chooser.error.clone() {
-                div { class: "text-[10px] mt-1", style: "color: rgb(240, 80, 80);", "{error}" }
+                div { class: "text-[11px] mt-1", style: "color: rgb(240, 80, 80);", "{error}" }
             }
         }
     }

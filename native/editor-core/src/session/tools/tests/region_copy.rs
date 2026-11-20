@@ -10,7 +10,7 @@ pub(super) const TEXT: &str = "entities: [chair, wall, crowbar]";
 
 /// A decal of the game's, at the corner of a cell, unturned and untinted.
 fn decal(id: i32, x: f32, y: f32) -> Decal {
-    Decal { id, prototype: "Arrows".into(), x, y, color: None, angle: 0.0, z_index: 0, cleanable: false }
+    Decal { id, prototype: "Arrows".into(), x, y, color: None, angle: 0.0, z_index: 0, cleanable: false, order: id.into() }
 }
 
 /// The region from (1, 1) to (3, 2) with the area tool, as `answered` gives the session. The

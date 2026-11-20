@@ -69,6 +69,11 @@ pub struct Decal {
     pub angle: f64,
     pub z_index: i32,
     pub cleanable: bool,
+    /// Where the game draws it among the decals of its z-index, lowest first. It is the id
+    /// where a grid keeps its decals itself, and the decal's chunk and its id there where a
+    /// fork keeps them on chunk entities, so it can change when the decal moves.
+    #[serde(default)]
+    pub order: i64,
 }
 
 /// A decal that was added or changed, or with no decal, removed.

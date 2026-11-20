@@ -6,7 +6,10 @@ use std::path::Path;
 use super::floors::{knowing_walls, made};
 use super::*;
 use crate::forks::settings::Settings;
-use crate::session::tools::room::room_cells;
+use crate::session::tools::marquee::{ellipse_cells, polygon_cells};
+use crate::session::tools::room::{room_cells, room_split};
+use crate::session::tools::tiles::rectangle_cells as tiles_rectangle;
+use crate::toolbox::RoomShape;
 
 /// A session that knows the walls, with FloorWood in hand and the Room tool.
 fn rooming() -> (Session, Receiver<ToEngine>) {
@@ -479,4 +482,244 @@ fn the_wall_list_starts_with_station_walls_and_ends_with_rock() {
     assert_eq!(ids(&session, &[]), ["WallSolid", "WallReinforced", "WallShuttle", "WallWood", "WallClown", "AsteroidRock", "WallRockBasalt", "WoodenSupportWall"]);
     // A search still finds the rock.
     assert_eq!(ids(&session, &["rock"]), ["AsteroidRock", "WallRockBasalt"]);
+}
+
+// ---- shapes past the rectangle ----
+
+/// The Room tool with this shape on an empty grid, as `rooms` gives it.
+fn shaped(shape: RoomShape) -> (Session, Receiver<ToEngine>) {
+    let (mut session, engine) = rooms(&[]);
+    session.set_room_shape(shape);
+    assert_eq!(session.room_shape(), shape);
+    (session, engine)
+}
+
+/// Draws a lasso or a polygon through these points on the map, closed by letting go or by Enter.
+fn trace_room(session: &mut Session, shape: RoomShape, points: &[(f32, f32)]) {
+    match shape {
+        RoomShape::Lasso => {
+            session.pointer_down(at(session, points[0]), VIEW, Button::Primary);
+            for &point in &points[1..] {
+                session.pointer_move(at(session, point), VIEW);
+            }
+            let last = *points.last().unwrap();
+            session.pointer_up(at(session, last), VIEW);
+        }
+        _ => {
+            for &point in points {
+                click(session, point);
+            }
+            assert!(session.enter_key());
+        }
+    }
+}
+
+/// Cells as the edits give them.
+fn wide(cells: &[(i32, i32)]) -> Vec<(i64, i64)> {
+    sorted(cells.iter().map(|&(x, y)| (i64::from(x), i64::from(y))))
+}
+
+/// Checks that a room of these cells was built as one edit: the floor in hand on each cell
+/// inside, Plating and a wall on each cell of the edge, and that a step side by side from
+/// inside never gets out past the walls.
+#[track_caller]
+fn closed_room(session: &Session, engine: &Receiver<ToEngine>, cells: &[(i32, i32)]) {
+    let (inside, edge) = room_split(cells);
+    assert!(!inside.is_empty());
+    let edits = edits(engine);
+    assert_eq!(labels(&edits), ["Build room"]);
+    assert_eq!(edits[0].1, None);
+    let ops = &edits[0].2;
+    let (tiles, walls) = built(ops);
+    let floor: Vec<(i64, i64)> = tiles.iter().filter(|(tile, _)| tile == "FloorWood").map(|(_, cell)| *cell).collect();
+    let plating: Vec<(i64, i64)> = tiles.iter().filter(|(tile, _)| tile == "Plating").map(|(_, cell)| *cell).collect();
+    assert_eq!(sorted(floor), wide(&inside));
+    assert_eq!(sorted(plating), wide(&edge));
+    assert_eq!(sorted(walls), wide(&edge));
+    let start = (i64::from(inside[0].0), i64::from(inside[0].1));
+    assert_eq!(reached(&walls_after(session, ops), start), Some(wide(&inside).into_iter().collect()));
+}
+
+#[test]
+fn every_shape_builds_a_closed_room_with_no_gap_at_a_corner() {
+    // An ellipse dragged from corner to corner.
+    let (mut session, engine) = shaped(RoomShape::Ellipse);
+    drag(&mut session, (2, 2), (12, 9));
+    closed_room(&session, &engine, &ellipse_cells((2, 2), (12, 9), 1000).unwrap());
+
+    // A lasso and a polygon of each of these: lopsided, an L with a corner turned in, and a
+    // triangle whose long side runs on the slant.
+    let shapes: [&[(f32, f32)]; 3] = [
+        &[(2.2, 2.7), (12.6, 1.9), (13.4, 9.1), (7.3, 13.2), (1.8, 10.4)],
+        &[(1.1, 1.1), (12.9, 1.1), (12.9, 5.9), (6.9, 5.9), (6.9, 12.9), (1.1, 12.9)],
+        &[(1.1, 1.1), (14.4, 1.1), (1.1, 14.4)],
+    ];
+    for points in shapes {
+        for shape in [RoomShape::Lasso, RoomShape::Polygon] {
+            let (mut session, engine) = shaped(shape);
+            trace_room(&mut session, shape, points);
+            closed_room(&session, &engine, &polygon_cells(points, 1000).unwrap());
+        }
+    }
+}
+
+#[test]
+fn the_edge_of_a_room_is_each_cell_with_one_of_its_eight_neighbours_outside() {
+    // A rectangle's is its border, as it always was.
+    let (inside, edge) = room_split(&tiles_rectangle((0, 0), (3, 2)));
+    assert_eq!((inside, edge.len()), (vec![(1, 1), (2, 1)], 10));
+    // An L of (0, 0) to (4, 2) and (0, 0) to (2, 4). The cell in the turn of the L, (2, 2),
+    // touches the outside only at its corner, and is edge, so the wall turns with no gap.
+    let mut l = tiles_rectangle((0, 0), (4, 2));
+    l.extend(tiles_rectangle((0, 3), (2, 4)));
+    let (inside, edge) = room_split(&l);
+    assert_eq!(sorted(inside), [(1, 1), (1, 2), (1, 3), (2, 1), (3, 1)]);
+    assert!(edge.contains(&(2, 2)));
+    // A shape too thin for an inside is all edge.
+    assert!(room_split(&[(0, 0), (1, 0), (0, 1), (1, 1)]).0.is_empty());
+}
+
+#[test]
+fn a_shape_too_thin_for_an_inside_builds_a_line_of_wall_if_a_rectangle_and_else_nothing() {
+    // A rectangle one cell wide builds its walls alone, as it always has.
+    let (mut session, engine) = shaped(RoomShape::Rectangle);
+    drag(&mut session, (2, 2), (2, 6));
+    let (tiles, walls) = built(&asked(&engine)[0]);
+    assert!(tiles.iter().all(|(tile, _)| tile == "Plating"));
+    assert_eq!(walls.len(), 5);
+
+    // An ellipse one or two cells wide, a little loop and a polygon of two corners are refused.
+    for to in [(2, 8), (3, 8)] {
+        let (mut session, engine) = shaped(RoomShape::Ellipse);
+        drag(&mut session, (2, 2), to);
+        assert!(asked(&engine).is_empty(), "{to:?}");
+        assert_eq!(session.status_line(), "Not built: the shape is too thin to have an inside");
+    }
+    let thin: [(RoomShape, &[(f32, f32)]); 2] = [(RoomShape::Lasso, &[(2.1, 3.1), (2.4, 3.1), (2.2, 3.3)]), (RoomShape::Polygon, &[(1.5, 1.5), (6.5, 2.5)])];
+    for (shape, points) in thin {
+        let (mut session, engine) = shaped(shape);
+        trace_room(&mut session, shape, points);
+        assert!(asked(&engine).is_empty(), "{shape:?}");
+        assert_eq!(session.status_line(), "Not built: the shape is too thin to have an inside");
+    }
+}
+
+#[test]
+fn a_traced_room_joins_or_keeps_apart_from_the_rooms_it_overlaps_as_a_rectangle_does() {
+    // The hallway of `intersection_builds_a_hallway_into_a_room`, as a polygon and a lasso.
+    let hallway = [(5.1, 2.1), (12.9, 2.1), (12.9, 4.9), (5.1, 4.9)];
+    for shape in [RoomShape::Lasso, RoomShape::Polygon] {
+        let (mut session, engine) = rooms(&[((0, 0), (6, 6))]);
+        session.set_room_intersection(true);
+        session.set_room_shape(shape);
+        trace_room(&mut session, shape, &hallway);
+        let ops = &asked(&engine)[0];
+        assert_eq!(removed(&session, ops), [(6, 3)], "{shape:?}");
+        let mut inside = block((1, 1), (5, 5));
+        inside.extend(block((6, 3), (11, 3)));
+        assert_eq!(reached(&walls_after(&session, ops), (2, 2)), Some(inside), "{shape:?}");
+
+        // Apart, it stacks no wall and takes none away.
+        let (mut session, engine) = rooms(&[((0, 0), (6, 6))]);
+        session.set_room_shape(shape);
+        trace_room(&mut session, shape, &hallway);
+        let ops = &asked(&engine)[0];
+        assert!(removed(&session, ops).is_empty());
+        let (_, walls) = built(ops);
+        assert_eq!(sorted(walls.iter().copied().filter(|cell| cell.0 <= 6)), [(5, 2), (5, 3), (5, 4)]);
+    }
+
+    // An ellipse drawn wholly inside a room with Intersection on joins it and builds no wall.
+    let (mut session, engine) = rooms(&[((0, 0), (10, 10))]);
+    session.set_room_intersection(true);
+    session.set_room_shape(RoomShape::Ellipse);
+    drag(&mut session, (2, 2), (8, 8));
+    let ops = &asked(&engine)[0];
+    assert!(built(ops).1.is_empty() && removed(&session, ops).is_empty());
+    assert_eq!(session.status_line(), "Joined the room around it. No walls built.");
+}
+
+#[test]
+fn a_traced_room_shows_its_ghost_and_marks_the_walls_it_would_take_away() {
+    let (mut session, engine) = rooms(&[((0, 0), (6, 6))]);
+    session.set_room_intersection(true);
+    session.set_room_shape(RoomShape::Lasso);
+    let hallway = [(5.1, 2.1), (12.9, 2.1), (12.9, 4.9), (5.1, 4.9)];
+    session.pointer_down(at(&session, hallway[0]), VIEW, Button::Primary);
+    for &point in &hallway[1..] {
+        session.pointer_move(at(&session, point), VIEW);
+    }
+    // As the rectangle's: 6 cells of floor, 13 walled and 3 left open, one red mark.
+    let (under, over_map) = session.overlay_quads();
+    assert_eq!(under.len(), 22 * FLOATS_PER_QUAD);
+    let marks = over_map.as_chunks::<FLOATS_PER_QUAD>().0.iter().filter(|quad| quad[8..12] == [1.0, 0.25, 0.2, 0.45]).count();
+    assert_eq!(marks, 1);
+    assert_eq!(session.drag_label().map(|label| label.1), Some("24 cells".to_owned()));
+    assert!(session.marquee_path().is_some_and(|path| path.closed));
+    assert!(asked(&engine).is_empty());
+}
+
+#[test]
+fn escape_a_right_click_or_another_shape_drops_a_traced_room() {
+    for how in ["escape", "right-click", "shape"] {
+        for shape in [RoomShape::Lasso, RoomShape::Polygon] {
+            let (mut session, engine) = shaped(shape);
+            session.selection = vec![CHAIR];
+            let corners = [(1.1, 1.1), (6.9, 1.1), (6.9, 6.9)];
+            if shape == RoomShape::Lasso {
+                session.pointer_down(at(&session, corners[0]), VIEW, Button::Primary);
+                session.pointer_move(at(&session, corners[1]), VIEW);
+                session.pointer_move(at(&session, corners[2]), VIEW);
+            } else {
+                for &point in &corners {
+                    click(&mut session, point);
+                }
+            }
+            assert!(session.marquee_path().is_some());
+            match how {
+                "escape" => session.escape(),
+                "right-click" => session.pointer_down(at(&session, (2.0, 2.0)), VIEW, Button::Secondary),
+                _ => session.set_room_shape(RoomShape::Rectangle),
+            }
+            assert!(session.marquee_path().is_none() && matches!(session.drag, Drag::None), "{how} {shape:?}");
+            assert!(!session.enter_key());
+            session.pointer_up(at(&session, (6.9, 6.9)), VIEW);
+            assert!(asked(&engine).is_empty(), "{how} {shape:?}");
+            assert_eq!(session.selection, [CHAIR]);
+        }
+    }
+}
+
+#[test]
+fn a_traced_room_of_more_than_ten_thousand_cells_is_refused() {
+    let (mut session, engine) = shaped(RoomShape::Polygon);
+    trace_room(&mut session, RoomShape::Polygon, &[(0.1, 0.1), (100.9, 0.1), (100.9, 99.9), (0.1, 99.9)]);
+    assert!(asked(&engine).is_empty());
+    assert_eq!(session.status_line(), "Not built: the room has more than 10,000 cells");
+    let (mut session, engine) = shaped(RoomShape::Ellipse);
+    drag(&mut session, (0, 0), (120, 120));
+    assert!(asked(&engine).is_empty());
+    assert_eq!(session.status_line(), "Not built: the room has more than 10,000 cells");
+}
+
+#[test]
+fn the_room_shape_is_kept_per_fork() {
+    let folder = std::env::temp_dir().join(format!("editor-core-room-shape-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    let file = folder.join("settings.json");
+    Settings::default().save(&file).unwrap();
+
+    let (mut session, _engine) = knowing_walls();
+    session.flooring = Flooring::load(file.clone(), "C:/forks/starlight");
+    assert_eq!(session.room_shape(), RoomShape::Rectangle);
+    session.set_room_shape(RoomShape::Polygon);
+    assert_eq!(Settings::load(&file).placing("C:/forks/starlight").room_shape, RoomShape::Polygon);
+
+    let (mut again, _again_engine) = knowing_walls();
+    again.flooring = Flooring::load(file.clone(), "C:/forks/starlight");
+    assert_eq!(again.room_shape(), RoomShape::Polygon);
+    let (mut other, _other_engine) = knowing_walls();
+    other.flooring = Flooring::load(file, "C:/checkouts/wizden");
+    assert_eq!(other.room_shape(), RoomShape::Rectangle);
+    let _ = std::fs::remove_dir_all(&folder);
 }
