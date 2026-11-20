@@ -163,8 +163,7 @@ fn an_engine_that_does_not_tell_its_draw_depths_is_said_with_the_first_map() {
     let (to_engine, _asked) = mpsc::channel();
     let (answers, from_engine) = mpsc::channel();
     let mut session = Session::with_channels(to_engine, from_engine, Arc::new(AtomicU64::new(0)), String::new());
-    let (depths, depths_warning) = DepthGroups::from_answer(Err("no such op 'drawdepths'
-   at somewhere".into()));
+    let (depths, depths_warning) = DepthGroups::from_answer(Err("no such op 'drawdepths'\n   at somewhere".into()));
     assert_eq!(depths, DepthGroups::default());
     let ready = FromEngine::Ready {
         document_kernel_ms: 0,
