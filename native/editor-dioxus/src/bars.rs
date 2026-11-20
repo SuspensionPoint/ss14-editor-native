@@ -342,7 +342,7 @@ fn in_hand_picture(editor: &mut Editor, held: &InHand) -> Option<String> {
     match held {
         InHand::Tile(id) => {
             let sprite = session.tiles.iter().find(|tile| &tile.id == id).and_then(|tile| tile.sprite.clone());
-            thumbs.tile(textures, id, sprite.as_deref(), 32)
+            thumbs.tile(textures, sprite.as_deref(), 32)
         }
         InHand::Entity { index, .. } => {
             session.want_previews(&[*index]);

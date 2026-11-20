@@ -17,7 +17,7 @@ const LISTED: usize = 40;
 fn tile_picture(editor: &mut Editor, id: &str) -> Option<String> {
     let Editor { session, textures, thumbs, .. } = editor;
     let sprite = session.tiles.iter().find(|tile| tile.id == id).and_then(|tile| tile.sprite.clone());
-    thumbs.tile(textures, id, sprite.as_deref(), 32)
+    thumbs.tile(textures, sprite.as_deref(), 32)
 }
 
 /// A wall's picture and name, for a row.

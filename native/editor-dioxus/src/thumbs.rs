@@ -15,6 +15,7 @@ pub(crate) const BIG: u32 = 128;
 /// The pictures made so far, by what they show and their size. None for one with no picture.
 #[derive(Default)]
 pub(crate) struct Thumbs {
+    /// By the tile's sprite and size.
     tiles: HashMap<(String, u32), Option<String>>,
     entities: HashMap<(usize, u32), Option<String>>,
     decals: HashMap<String, Option<String>>,
@@ -23,11 +24,14 @@ pub(crate) struct Thumbs {
 
 impl Thumbs {
     /// A tile's picture, this many pixels each way.
-    pub(crate) fn tile(&mut self, textures: &BakedTextures, id: &str, sprite: Option<&str>, size: u32) -> Option<String> {
-        self.tiles
-            .entry((id.to_owned(), size))
-            .or_insert_with(|| sprite.and_then(|sprite| textures.thumbnail(sprite, size)).map(|pixels| data_uri(&pixels, size)))
-            .clone()
+    ///
+    /// They are kept by the sprite and not by the tile's id. A tile asked for before the engine
+    /// has sent the list of tiles comes with no sprite. Kept by its id, that missing picture
+    /// stayed for good: Plating, the tile under walls that the options bar shows from the
+    /// start, showed only its name in the palette. With no sprite nothing is kept.
+    pub(crate) fn tile(&mut self, textures: &BakedTextures, sprite: Option<&str>, size: u32) -> Option<String> {
+        let sprite = sprite?;
+        self.tiles.entry((sprite.to_owned(), size)).or_insert_with(|| textures.thumbnail(sprite, size).map(|pixels| data_uri(&pixels, size))).clone()
     }
 
     /// A prototype's picture, once the engine has said how it looks. None until then, and for
@@ -145,3 +149,7 @@ pub(crate) fn picture_uri(pixels: &[u8], width: u32, height: u32) -> String {
     }
     format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(file))
 }
+
+#[cfg(test)]
+#[path = "tests/thumbs.rs"]
+mod tests;

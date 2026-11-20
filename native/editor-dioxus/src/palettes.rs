@@ -278,7 +278,7 @@ fn FavouritesPalette() -> Element {
                 let picture = match (row.favourite.kind, row.state) {
                     (FavouriteKind::Tile, FavouriteState::Here(index)) => {
                         let sprite = session.tiles[index].sprite.clone();
-                        thumbs.tile(textures, &row.favourite.id, sprite.as_deref(), 32)
+                        thumbs.tile(textures, sprite.as_deref(), 32)
                     }
                     (FavouriteKind::Entity, FavouriteState::Here(index)) => thumbs.entity(session, textures, index, 32),
                     (FavouriteKind::Decal, FavouriteState::Here(index)) => thumbs.decal(session, textures, index),
@@ -394,7 +394,7 @@ fn TilePalette(search: String, chosen: Option<String>, count: usize, starred: Ve
             .iter()
             .map(|&index| &session.tiles[index])
             .filter(|tile| wanted.is_empty() || tile.id.to_lowercase().contains(&wanted))
-            .map(|tile| (tile.id.clone(), thumbs.tile(textures, &tile.id, tile.sprite.as_deref(), 32)))
+            .map(|tile| (tile.id.clone(), thumbs.tile(textures, tile.sprite.as_deref(), 32)))
             .collect()
     });
     let shown = tiles.len();
@@ -402,7 +402,7 @@ fn TilePalette(search: String, chosen: Option<String>, count: usize, starred: Ve
         let picture = with(|editor| {
             let sprite = editor.session.tiles.iter().find(|tile| tile.id == id).and_then(|tile| tile.sprite.clone());
             let Editor { textures, thumbs, .. } = editor;
-            thumbs.tile(textures, &id, sprite.as_deref(), BIG)
+            thumbs.tile(textures, sprite.as_deref(), BIG)
         });
         (id, x, y, picture)
     });
