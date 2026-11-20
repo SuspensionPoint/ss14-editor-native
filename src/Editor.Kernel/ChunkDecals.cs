@@ -20,8 +20,14 @@ namespace SS14.EditorKernel;
 //     the highest it has given (TryAllocateDecalId).
 //   - A chunk entity left with no decals goes (DirtyChunk).
 //   - A decal moved into another chunk leaves its own and is added to the other as a new one
-//     there (SetDecalPosition). Any other change keeps it where it is (ModifyDecal), and so does
-//     a move within its chunk.
+//     there (SetDecalPosition). Any other change keeps it where it is (ModifyDecal).
+//
+// One rule is the editor's own. The game's SetDecalPosition takes a decal out and adds it again
+// on any move, so a decal moved within its chunk gets the lowest free id there, and the chunk
+// entity of a chunk with only that decal goes and is made anew. The editor keeps such a decal
+// under its id, as a change of colour keeps it. A mapper's nudge then changes one line of the
+// file and not the decal's id and its chunk entity's number, and the file is one the game loads
+// just the same.
 //   - As a map loads, each chunk's highest id is raised to its highest decal
 //     (SharedDecalSystem.RebuildFreeDecalIds), and a grid that still keeps its decals the old
 //     way, in its DecalGridComponent, has them moved onto chunk entities
@@ -39,7 +45,8 @@ public sealed partial class DocumentManager
     /// <param name="From">Its chunk and its id there before, if it was there.</param>
     /// <param name="To">Its chunk and its id there after, if it is there. The same as From for a decal changed in its chunk.</param>
     /// <param name="ToMax">The highest id the chunk it went to had given before it came.</param>
-    /// <param name="ToMade">Whether the chunk it went to had to be made for it.</param>
+    /// <param name="ToMade">Whether the chunk it went to had no decals of its own before: no chunk entity, or one without them.</param>
+    /// <param name="ToEntityMade">Whether the chunk entity of the chunk it went to had to be made for it. One the file has with no decals is kept.</param>
     /// <param name="FromGone">The chunk it left, if that went for being empty: the highest id it had given and its number in the file (0 for none).</param>
     private sealed record DecalEdit(
         EntityUid Grid,
@@ -50,6 +57,7 @@ public sealed partial class DocumentManager
         DecalIndex? To,
         ushort ToMax,
         bool ToMade,
+        bool ToEntityMade,
         (ushort Max, int YamlUid)? FromGone) : Change;
 
     /// <summary>The editor's numbers for the decals of one grid, and where each decal is.</summary>
@@ -89,9 +97,17 @@ public sealed partial class DocumentManager
 
     /// <summary>
     /// What the game does to decals as a map loads (SharedDecalSystem.RebuildFreeDecalIds and the
-    /// server's MigrateLegacyDecalGrid), on every grid of the map.
+    /// server's MigrateLegacyDecalGrid), on every grid of the map. A document gets it as it
+    /// opens, and so does a map the kernel loads only to save again (EditorKernel.Resave).
     /// </summary>
-    private void StartDecals(EntityUid map)
+    /// <remarks>
+    /// After a grid's old decals are moved onto chunk entities, the game gives a new decal of
+    /// such a chunk the id after the highest until the map is loaded again: its list of free ids
+    /// is not saved, and is made only as a chunk starts, before the decals are moved in. The
+    /// editor gives the lowest free id (FreeId), as the game does once the map is loaded again.
+    /// Either way the file is one the game loads.
+    /// </remarks>
+    internal void StartDecals(EntityUid map)
     {
         bool OnMap(EntityUid uid) => uid == map || _entMan.GetComponent<TransformComponent>(uid).MapUid == map;
 
@@ -123,7 +139,7 @@ public sealed partial class DocumentManager
             {
                 foreach (var (id, decal) in chunk.Decals)
                 {
-                    var target = MakeChunk(grid, ChunkEntitySystem.GetChunkIndices(decal.Coordinates), out _);
+                    var target = MakeChunk(grid, ChunkEntitySystem.GetChunkIndices(decal.Coordinates), out _, out _);
                     PutDecal(target, id, decal);
                 }
             }
@@ -220,12 +236,14 @@ public sealed partial class DocumentManager
         DecalIndex? from = old == null ? null : numbers.Places[id];
         DecalIndex? to = null;
         ushort toMax = 0;
-        var made = false;
+        var (made, entityMade) = (false, false);
         (ushort, int)? gone = null;
 
         if (decal != null && from is { } here && ChunkEntitySystem.GetChunkIndices(decal.Coordinates) == here.Chunk)
         {
-            // Changed where it is, as the game's SetDecalColor and the like change one.
+            // Changed where it is, as the game's SetDecalColor and the like change one. A move
+            // within the chunk is changed so too, by the editor's own rule (see the top of this
+            // file): the game would take it out and add it again.
             var chunk = DecalChunk(grid, here.Chunk)!.Value;
             toMax = chunk.Comp2.MaxDecalId;
             chunk.Comp2.Decals[here.Id] = decal;
@@ -243,14 +261,14 @@ public sealed partial class DocumentManager
 
             if (decal != null)
             {
-                var chunk = MakeChunk(grid, indices, out made);
+                var chunk = MakeChunk(grid, indices, out entityMade, out made);
                 toMax = chunk.Comp2.MaxDecalId;
                 to = new DecalIndex(indices, FreeId(chunk.Comp2)!.Value);
                 PutDecal(chunk, to.Value.Id, decal);
             }
         }
 
-        var change = new DecalEdit(grid, id, old, decal, from, to, toMax, made, gone);
+        var change = new DecalEdit(grid, id, old, decal, from, to, toMax, made, entityMade, gone);
         numbers.Set(id, to);
         report.Add(new DecalChange(grid.Id, (int) id, decal == null || to == null ? null : DescribeDecal(id, decal, OrderOf(to.Value))));
         return change;
@@ -270,7 +288,7 @@ public sealed partial class DocumentManager
                 TakeDecal(grid, from);
 
             if (change.To is { } to)
-                PutDecal(MakeChunk(grid, to.Chunk, out _), to.Id, change.New!);
+                PutDecal(MakeChunk(grid, to.Chunk, out _, out _), to.Id, change.New!);
         }
         else
         {
@@ -278,13 +296,24 @@ public sealed partial class DocumentManager
             {
                 chunk.Comp2.Decals.Remove(to.Id);
                 chunk.Comp2.MaxDecalId = change.ToMax;
+                // Only what the change made goes: a chunk entity the file had with no decals stays.
                 if (change.ToMade && chunk.Comp2.Decals.Count == 0)
-                    DropChunk(chunk);
+                {
+                    if (change.ToEntityMade)
+                    {
+                        DropChunk(chunk);
+                    }
+                    else
+                    {
+                        _entMan.RemoveComponent<DecalChunkComponent>(chunk.Owner);
+                        Untrack(chunk.Owner);
+                    }
+                }
             }
 
             if (change.From is { } from)
             {
-                var back = MakeChunk(grid, from.Chunk, out var made);
+                var back = MakeChunk(grid, from.Chunk, out _, out var made);
                 if (made && change.FromGone is { } gone)
                 {
                     back.Comp2.MaxDecalId = gone.Max;
@@ -314,9 +343,11 @@ public sealed partial class DocumentManager
     /// <summary>
     /// A chunk's decals, with its chunk entity made if it has none (DecalSystem.GetOrCreateDecalChunk).
     /// </summary>
+    /// <param name="entityMade">Whether the chunk had no chunk entity before.</param>
     /// <param name="made">Whether the chunk had no decals of its own before: no chunk entity, or one without them.</param>
-    private Entity<ChunkEntityComponent, DecalChunkComponent> MakeChunk(EntityUid grid, Vector2i indices, out bool made)
+    private Entity<ChunkEntityComponent, DecalChunkComponent> MakeChunk(EntityUid grid, Vector2i indices, out bool entityMade, out bool made)
     {
+        entityMade = !ChunkEntities.TryGetChunk(grid, indices, out _);
         var chunk = ChunkEntities.GetOrCreateChunk(grid, indices);
         made = !_entMan.HasComponent<DecalChunkComponent>(chunk.Owner);
         var decals = _entMan.EnsureComponent<DecalChunkComponent>(chunk.Owner);
