@@ -289,7 +289,7 @@ fn doc(session: &mut Session) -> &mut Doc {
 
 /// A decal of the grid with its corner at a position.
 fn decal(id: i32, x: f32, y: f32) -> Decal {
-    Decal { id, prototype: "Arrows".into(), x, y, color: Some("#FF0000FF".into()), angle: 1.5, z_index: 3, cleanable: true }
+    Decal { id, prototype: "Arrows".into(), x, y, color: Some("#FF0000FF".into()), angle: 1.5, z_index: 3, cleanable: true, order: id.into() }
 }
 
 /// The kind of each op, in order.
@@ -360,6 +360,31 @@ fn a_turned_region_carries_its_air_to_the_turned_cells() {
     turn(&mut session, false);
     // With the clock about the middle of (2, 1): the middle stays, and only places turn.
     assert_eq!(air_moves(&one_edit(&engine)), [((1, 1), (2, 2)), ((2, 1), (2, 1)), ((3, 1), (2, 0))]);
+}
+
+/// The decal each `decal.update` op of an edit moves, in order.
+fn decal_moves(ops: &[Value]) -> Vec<i64> {
+    ops.iter().filter(|op| op["kind"] == "decal.update").map(|op| op["uid"].as_i64().unwrap()).collect()
+}
+
+#[test]
+fn a_region_move_sends_the_decals_of_the_chunks_it_goes_towards_first() {
+    let (mut session, _engine) = area();
+    // Two decals in the chunk at 0,0 and two in the one to its right, each pair in draw order
+    // against its numbers, and one in the chunk above.
+    let decals = &mut doc(&mut session).grids[0].decals;
+    for (id, x, y, order) in [(1, 2.0, 1.0, 11), (2, 3.0, 1.0, 10), (3, 17.0, 1.0, 21), (4, 18.0, 1.0, 20), (5, 2.0, 17.0, 30)] {
+        decals.insert(id, Decal { order, ..decal(id, x, y) });
+    }
+    let doc = session.doc.as_ref().unwrap();
+    let region = region_of(&[(2, 1), (3, 1), (17, 1), (18, 1), (2, 17)]);
+    // Right: the right chunk leaves first, so the left one's decals find it empty.
+    assert_eq!(decal_moves(&move_ops(doc, &region, (16, 0))), [4, 3, 2, 1, 5]);
+    // Left: the other way about.
+    assert_eq!(decal_moves(&move_ops(doc, &region, (-16, 0))), [2, 1, 5, 4, 3]);
+    // Down: the lower chunks first, each row as the game draws it.
+    assert_eq!(decal_moves(&move_ops(doc, &region, (0, -16))), [2, 1, 4, 3, 5]);
+    assert_eq!(decal_moves(&move_ops(doc, &region, (0, 16))), [5, 2, 1, 4, 3]);
 }
 
 #[test]

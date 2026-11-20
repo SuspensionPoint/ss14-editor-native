@@ -356,7 +356,7 @@ impl Session {
     }
 
     /// The decals whose cell-sized square is under a map position, top first: the higher
-    /// z-index, and of the same the later id. None while the decal layer is hidden.
+    /// z-index, and of the same the one the game draws later. None while the decal layer is hidden.
     pub(super) fn decals_at(&self, world: (f32, f32)) -> Vec<(i32, i32)> {
         let Some(doc) = self.doc.as_ref().filter(|_| self.layers.decals) else { return Vec::new() };
         let mut found: Vec<(i32, &Decal)> = Vec::new();
@@ -365,7 +365,7 @@ impl Session {
             let under = grid.decals.values().filter(|decal| local.0 >= decal.x && local.0 < decal.x + 1.0 && local.1 >= decal.y && local.1 < decal.y + 1.0);
             found.extend(under.map(|decal| (grid.uid, decal)));
         }
-        found.sort_by(|a, b| (b.1.z_index, b.1.id).cmp(&(a.1.z_index, a.1.id)));
+        found.sort_by(|a, b| (b.1.z_index, b.1.order, b.1.id).cmp(&(a.1.z_index, a.1.order, a.1.id)));
         found.into_iter().map(|(grid, decal)| (grid, decal.id)).collect()
     }
 

@@ -184,7 +184,7 @@ impl Session {
         let mut near: Vec<(i32, u32, f32, i32, (f32, f32))> = list
             .items
             .iter()
-            .filter(|(&id, item)| id > 0 && hidden & (1 << group_of(item.kind, item.depth)) == 0)
+            .filter(|(&id, item)| id > 0 && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
             .filter_map(|(&id, item)| {
                 let (l, b, r, t) = quads_bounds(&item.quads)?;
                 let middle = ((l + r) / 2.0, (b + t) / 2.0);
@@ -306,7 +306,7 @@ impl Session {
         let mut found: Vec<i32> = document
             .items
             .iter()
-            .filter(|(&id, item)| id > 0 && !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth)) == 0)
+            .filter(|(&id, item)| id > 0 && !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
             .filter(|(_, item)| quads_bounds(&item.quads).is_some_and(|(l, b, r, t)| inside(((l + r) / 2.0, (b + t) / 2.0))))
             .map(|(&id, _)| id)
             .collect();
@@ -318,7 +318,7 @@ impl Session {
     pub(super) fn entity_shown(&self, uid: i32) -> bool {
         let Some(document) = self.document.and_then(|id| self.lists.documents.get(&id)) else { return false };
         let hidden = self.layers.hidden_mask();
-        document.items.get(&uid).is_some_and(|item| !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth)) == 0)
+        document.items.get(&uid).is_some_and(|item| !item.quads.is_empty() && hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0)
     }
 
     /// Deletes the selected entities and decals, as one edit.

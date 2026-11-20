@@ -8,10 +8,13 @@ namespace SS14.EditorNative;
 /// Checks what the kernel says about prototypes against facts of the game that don't change. A
 /// wall is tagged as a wall. The decals a mapper uses are listed with their pictures and with the
 /// settings the game's own decal palette starts each one with. A tile says whether it can be
-/// turned.
+/// turned. The fork's draw depths are told by name, as its source names them.
 /// </summary>
-public static class FactsCheck
+public static partial class FactsCheck
 {
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*(\w+)\s*=\s*DrawDepthTag\.Default\s*(?:([+-])\s*(\d+))?\s*,")]
+    private static partial System.Text.RegularExpressions.Regex DepthLine();
+
     /// <summary>A decal prototype's switches, each with what the game gives it when a prototype says nothing.</summary>
     private static readonly (string Name, bool Default)[] Switches =
     [
@@ -160,6 +163,25 @@ public static class FactsCheck
 
             var turning = all.Count(tile => Flag(tile, "allowsRotation") == true);
             Expect(turning > 0 && turning * 4 < all.Length, $"{turning} of the {all.Length} tiles can be turned, some and fewer than a quarter");
+        });
+
+        Ask("draw depths", () =>
+        {
+            // The fork's own Content.Shared/DrawDepth/DrawDepth.cs, read as text: each name is
+            // DrawDepthTag.Default (0) and so many above or below it.
+            var source = Path.Combine(forkRepo, "Content.Shared", "DrawDepth", "DrawDepth.cs");
+            var inSource = File.ReadLines(source)
+                .Select(line => DepthLine().Match(line))
+                .Where(match => match.Success)
+                .Select(match => (Name: match.Groups[1].Value, Value: match.Groups[2].Success ? (match.Groups[2].Value == "-" ? -1 : 1) * int.Parse(match.Groups[3].Value) : 0))
+                .OrderBy(depth => depth.Value)
+                .ThenBy(depth => depth.Name, StringComparer.Ordinal)
+                .ToArray();
+            using var depths = JsonDocument.Parse(session.Command("drawdepths", "{}"));
+            var told = depths.RootElement.EnumerateArray().Select(depth => (Name: Text(depth, "name") ?? "", Value: depth.GetProperty("value").GetInt32())).ToArray();
+            string Walls((string Name, int Value)[] all) => all.FirstOrDefault(depth => depth.Name == "Walls") is { Name: not null } walls ? walls.Value.ToString() : "none";
+            Expect(inSource.Length > 10 && told.SequenceEqual(inSource),
+                $"the kernel tells the {told.Length} draw depths of the fork's DrawDepth.cs ({inSource.Length}) by name and number, lowest first. Walls are at {Walls(told)} ({Walls(inSource)} in the source)");
         });
 
         Ask("the cleanup on delete", () =>

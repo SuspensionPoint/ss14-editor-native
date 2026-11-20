@@ -28,7 +28,7 @@ fn doc() -> Doc {
     let entity = |uid: i32, prototype: &str, parent: i32, contained: bool| {
         format!(r#"{{"uid":{uid},"yamlUid":{uid},"prototype":"{prototype}","parent":{parent},"x":0.5,"y":0.5,"rotation":0,"anchored":false,"contained":{contained},"name":null}}"#)
     };
-    let dirt = r#"{"id":9,"prototype":"Dirt","x":4.25,"y":-0.5,"color":null,"angle":-1.5707963267948966,"zIndex":0,"cleanable":true}"#;
+    let dirt = r#"{"id":9,"prototype":"Dirt","x":4.25,"y":-0.5,"color":null,"angle":-1.5707963267948966,"zIndex":0,"cleanable":true,"order":8589934601}"#;
     let entities = [
         entity(44, "Pen", BACKPACK, true),
         entity(LOCKER, "LockerBotanist", GRID, false),
@@ -88,7 +88,7 @@ fn a_grid_keeps_its_decals() {
     let arrow = &decals[&7];
     assert_eq!((arrow.prototype.as_str(), arrow.z_index, arrow.color.as_deref()), ("Arrows", 3, Some("#FF0000FF")));
     // A decal with no colour of its own, off the middle of a tile and turned a quarter.
-    let dirt = Decal { id: 9, prototype: "Dirt".into(), x: 4.25, y: -0.5, color: None, angle: -std::f64::consts::FRAC_PI_2, z_index: 0, cleanable: true };
+    let dirt = Decal { id: 9, prototype: "Dirt".into(), x: 4.25, y: -0.5, color: None, angle: -std::f64::consts::FRAC_PI_2, z_index: 0, cleanable: true, order: 8589934601 };
     assert_eq!(decals[&9], dirt);
 }
 

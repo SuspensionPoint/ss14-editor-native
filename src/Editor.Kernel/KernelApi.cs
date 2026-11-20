@@ -29,6 +29,8 @@ public sealed class KernelApi(EditorKernel kernel)
                 return kernel.GetEntityPrototypes();
             case "decals":
                 return kernel.GetDecalPrototypes();
+            case "drawdepths":
+                return kernel.GetDrawDepths();
             case "validate":
                 return kernel.Validate(Text(args, "yaml"), Text(args, "source", "map.yml"));
             case "resave":

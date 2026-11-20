@@ -245,7 +245,7 @@ impl Session {
     fn erasable(&self, uid: i32, named: bool) -> bool {
         let item = self.document.and_then(|id| self.lists.documents.get(&id)).and_then(|document| document.items.get(&uid));
         match item {
-            Some(item) if self.layers.hidden_mask() & (1 << group_of(item.kind, item.depth)) != 0 => false,
+            Some(item) if self.layers.hidden_mask() & (1 << group_of(item.kind, item.depth, &self.lists.depths)) != 0 => false,
             Some(item) if !item.quads.is_empty() => true,
             _ => named && self.layers.entities,
         }

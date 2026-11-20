@@ -26,6 +26,7 @@ use crate::links::{EntityPorts, LinkMirror, LinksAnswer, Ports, PortsJson};
 use crate::loading::{Loading, Step};
 use crate::locale::Locale;
 use crate::model::{cells_between, share_names, Container, DecalPrototype, Delta, Doc, EngineTiming, Entity, EntityContainers, Prototype, SceneJson, SPACE};
+use crate::draw_depths::{DepthGroups, DrawDepth};
 use crate::renderer::{group, group_of, Camera, GridLines};
 use crate::textures::BakedTextures;
 
@@ -329,6 +330,8 @@ pub struct Session {
     /// The last message for a status bar. Only [`Self::set_status`] changes it, and a status
     /// bar shows [`Self::status_line`].
     status: String,
+    /// Why the layer switches use Starlight's draw depths, said with the first map to open.
+    depths_warning: Option<String>,
     /// What a press last asked the mapper to choose, until a choice answers it or a message
     /// takes its place.
     hint: Option<Hint>,
@@ -526,6 +529,7 @@ impl Session {
             fixing_air: air_fix::FixingAir::default(),
             sent_t_ray: None,
             status: "Engine starting".into(),
+            depths_warning: None,
             hint: None,
             loading: None,
             engine_gone: false,
@@ -732,13 +736,18 @@ impl Session {
                     }
                     self.set_status(format!("Not opened: {}", error.lines().next().unwrap_or("")));
                 }
-                FromEngine::Ready { document_kernel_ms, view_kernel_ms, warm_up_ms, tiles, prototypes, decal_prototypes, ports } => {
+                FromEngine::Ready { document_kernel_ms, view_kernel_ms, warm_up_ms, tiles, prototypes, decal_prototypes, ports, depths, depths_warning } => {
                     self.ports = ports;
+                    self.lists.depths = Arc::new(depths);
                     self.engine_ready_ms = Some(self.started.elapsed().as_millis() as u64);
                     self.warm_up_ms = Some(warm_up_ms);
                     self.set_status(format!(
                         "Engine ready (document kernel {document_kernel_ms} ms, view kernel {view_kernel_ms} ms, warm-up {warm_up_ms} ms). Opening the map"
                     ));
+                    if let Some(warning) = &depths_warning {
+                        self.set_status(format!("{}. {warning}", self.status));
+                    }
+                    self.depths_warning = depths_warning;
                     // The first tile in hand, which the Tiles target takes back. With another
                     // target already set, as by a key before the engine was ready, the palette
                     // keeps to that target.
@@ -772,6 +781,10 @@ impl Session {
                             self.set_status(format!("{}: {entities} entities, opened by the engine in {:.0} ms", doc.source, timing.total_ms));
                         }
                         Err(error) => self.set_status(format!("{}: {entities} entities. The engine couldn't list the links: {}", doc.source, error.lines().next().unwrap_or(""))),
+                    }
+                    // Said again with the first map, whose line takes the place of the one that said it.
+                    if let Some(warning) = self.depths_warning.take() {
+                        self.set_status(format!("{}. {warning}", self.status));
                     }
                     self.doc = Some(doc);
                     self.selection.clear();

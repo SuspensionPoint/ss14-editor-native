@@ -119,7 +119,7 @@ fn standing<'a>(doc: &'a Doc, region: &Region) -> Vec<&'a Entity> {
 /// The ops that move a region by whole cells with what stands on it, from the mirror alone,
 /// in the order the engine check proved (`RegionCheck.cs`, `MovePlan`). First the tiles are
 /// written where they go, with their variant and turn. Then come the entities, then the
-/// decals whose corner is on the region, with every field resent. Last the cells left behind
+/// decals whose corner is on the region, with every field resent (in `decal_move_order`). Last the cells left behind
 /// are set to space. A cell that is left and gone to is written once and not cleared. A cell
 /// of the region with no tile writes nothing and clears nothing. After all that, the air the
 /// grid stores for each cell with a tile goes where the tile went (`air_ops`).
@@ -141,7 +141,7 @@ pub(in crate::session) fn move_ops(doc: &Doc, region: &Region, by: (i32, i32)) -
         ops.push(json!({ "kind": "move", "uid": entity.uid, "x": entity.x + dx, "y": entity.y + dy }));
     }
     let mut decals: Vec<_> = grid.decals.values().filter(|decal| on(region, decal.x, decal.y)).collect();
-    decals.sort_unstable_by_key(|decal| decal.id);
+    decals.sort_unstable_by_key(|decal| decal_move_order(decal, by));
     for decal in decals {
         ops.push(json!({
             "kind": "decal.update", "uid": decal.id, "grid": grid.uid, "x": decal.x + dx, "y": decal.y + dy,
@@ -157,6 +157,22 @@ pub(in crate::session) fn move_ops(doc: &Doc, region: &Region, by: (i32, i32)) -
     }
     ops.extend(air_ops(grid.uid, cells.iter().map(|&cell| (cell, (cell.0 + by.0, cell.1 + by.1)))));
     ops
+}
+
+/// The size of the chunks a fork that keeps its decals on chunk entities keeps them in, in
+/// cells each way (the game's ChunkEntitySystem.ChunkSize).
+const DECAL_CHUNK: f32 = 16.0;
+
+/// The order a region move sends its decals in. On a fork that keeps its decals on chunk
+/// entities, a decal that goes into another chunk takes the lowest id free there. So the decals
+/// of the chunks the move goes towards go first, and leave theirs before the decals behind
+/// them come in. A chunk the move fills anew then gives its decals the ids it gave before, and
+/// does not count up past those still there. Within a chunk they go in the order the game draws
+/// them, which their new chunk then keeps. A fork that keeps its decals on the grid keeps every
+/// decal's id whatever the order.
+fn decal_move_order(decal: &Decal, by: (i32, i32)) -> (i32, i32, i64, i32) {
+    let chunk = ((decal.x / DECAL_CHUNK).floor() as i32, (decal.y / DECAL_CHUNK).floor() as i32);
+    (-by.0.signum() * chunk.0, -by.1.signum() * chunk.1, decal.order, decal.id)
 }
 
 /// The ops that carry the air the grid stores for each cell to the cell its tile goes to. The
@@ -216,7 +232,7 @@ pub(super) fn within(cell: i32, offset: f32) -> f32 {
 /// which is the lowest cell of the box around it each way, and the entities that stand on it,
 /// which the engine copies. Its cells and its tiles are measured from the origin cell, in
 /// order. Its decals are those whose corner is on a cell of it that has a tile, as the engine
-/// has none elsewhere, in the order of their ids. None if its grid is not in the mirror.
+/// has none elsewhere, in the order the game draws them. None if its grid is not in the mirror.
 pub(super) fn region_copy(doc: &Doc, region: &Region) -> Option<(RegionCopy, (i32, i32), Vec<i32>)> {
     let grid = doc.grid(region.grid)?;
     let (left, bottom, _, _) = region.bounds();
@@ -241,7 +257,7 @@ pub(super) fn region_copy(doc: &Doc, region: &Region) -> Option<(RegionCopy, (i3
         })
         .map(|decal| Decal { x: decal.x - left as f32, y: decal.y - bottom as f32, ..decal.clone() })
         .collect();
-    decals.sort_unstable_by_key(|decal| decal.id);
+    decals.sort_unstable_by_key(|decal| (decal.order, decal.id));
     let uids = standing(doc, region).iter().map(|entity| entity.uid).collect();
     Some((RegionCopy { cells, tiles, decals }, (left, bottom), uids))
 }
@@ -283,7 +299,7 @@ pub(in crate::session) fn turn_ops(doc: &Doc, region: &Region, pivot: (i32, i32)
         ops.push(json!({ "kind": "rotate", "uid": entity.uid, "rotation": quarter_on(entity.rotation, clockwise) }));
     }
     let mut decals: Vec<_> = grid.decals.values().filter(|decal| on(region, decal.x, decal.y)).collect();
-    decals.sort_unstable_by_key(|decal| decal.id);
+    decals.sort_unstable_by_key(|decal| (decal.order, decal.id));
     for decal in decals {
         let middle = about(f64::from(decal.x) + 0.5, f64::from(decal.y) + 0.5);
         let mut at = ((middle.0 - 0.5) as f32, (middle.1 - 0.5) as f32);
@@ -682,7 +698,7 @@ impl Session {
         let (origin, moved) = (grid.to_world((0.0, 0.0)), grid.to_world((by.0 as f32, by.1 as f32)));
         let (dx, dy) = (moved.0 - origin.0, moved.1 - origin.1);
         let hidden = self.layers.hidden_mask();
-        for item in entities.iter().filter_map(|uid| list.items.get(uid)).filter(|item| hidden & (1 << group_of(item.kind, item.depth)) == 0) {
+        for item in entities.iter().filter_map(|uid| list.items.get(uid)).filter(|item| hidden & (1 << group_of(item.kind, item.depth, &self.lists.depths)) == 0) {
             for quad in item.quads.chunks_exact(FLOATS_PER_QUAD) {
                 for corner in quad[..8].chunks_exact(2) {
                     over.extend_from_slice(&[corner[0] + dx, corner[1] + dy]);
