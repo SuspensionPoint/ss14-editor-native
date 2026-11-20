@@ -48,10 +48,10 @@ Station 14 should work too. Open it from its folder or paste its GitHub URL.
 | Fork | Repository | Status |
 |---|---|---|
 | Starlight | [ss14Starlight/space-station-14](https://github.com/ss14Starlight/space-station-14) | Works. The editor is developed and tested on it, plumbing included. |
-| Space Wizards | [space-wizards/space-station-14](https://github.com/space-wizards/space-station-14) | Works. On current master, decals show but can't be edited yet. |
+| Space Wizards | [space-wizards/space-station-14](https://github.com/space-wizards/space-station-14) | Works. |
 | Delta-V | [DeltaV-Station/Delta-v](https://github.com/DeltaV-Station/Delta-v) | Works. |
 | Goob Station | [Goob-Station/Goob-Station](https://github.com/Goob-Station/Goob-Station) | Works. |
-| Funky Station | [funky-station/forky-station](https://github.com/funky-station/forky-station) | Works. Decals show but can't be edited yet. |
+| Funky Station | [funky-station/forky-station](https://github.com/funky-station/forky-station) | Works. |
 | RMC-14 | [RMC-14/RMC-14](https://github.com/RMC-14/RMC-14) | Works. Its `global.json` asks for the .NET 9 SDK. Without it, the editor builds with .NET 10 instead. |
 
 If your fork misbehaves, please [open an issue](https://github.com/SuspensionPoint/ss14-editor-native/issues)
