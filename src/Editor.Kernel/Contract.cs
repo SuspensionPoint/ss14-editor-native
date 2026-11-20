@@ -68,6 +68,11 @@ public sealed record SceneGrid(
 
 /// <summary>A decal on a grid, as the game's decal component holds it.</summary>
 public sealed record SceneDecal(
+    /// <summary>
+    /// Its number on its grid, which stays the same while the document is open. A fork that keeps
+    /// its decals on chunk entities numbers them in the chunk, so there the kernel gives each
+    /// decal a number of its own for the session (ChunkDecals.cs).
+    /// </summary>
     int Id,
     string Prototype,
     /// <summary>Position in the grid's own coordinates: the lower-left corner of the decal.</summary>
@@ -77,7 +82,14 @@ public sealed record SceneDecal(
     string? Color,
     double Angle,
     int ZIndex,
-    bool Cleanable);
+    bool Cleanable,
+    /// <summary>
+    /// Where the game draws it among the decals of its z-index, lowest first. It is the decal's
+    /// number where the grid keeps its decals itself. Where they are kept on chunk entities it
+    /// is the chunk's x and y and the decal's id in the chunk, the order of the game's
+    /// DecalOverlay, packed into one number as ChunkDecals.cs OrderOf does.
+    /// </summary>
+    long Order);
 
 /// <summary>A decal that was added or changed, or (with no <see cref="Decal"/>) removed.</summary>
 public sealed record DecalChange(int Grid, int Id, SceneDecal? Decal);

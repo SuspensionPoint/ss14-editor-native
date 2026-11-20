@@ -148,7 +148,7 @@ pub(in crate::session) fn move_ops(doc: &Doc, region: &Region, by: (i32, i32)) -
         ops.push(json!({ "kind": "move", "uid": entity.uid, "x": entity.x + dx, "y": entity.y + dy }));
     }
     let mut decals: Vec<_> = grid.decals.values().filter(|decal| on(region, decal.x, decal.y)).collect();
-    decals.sort_unstable_by_key(|decal| decal.id);
+    decals.sort_unstable_by_key(|decal| (decal.order, decal.id));
     for decal in decals {
         ops.push(json!({
             "kind": "decal.update", "uid": decal.id, "grid": grid.uid, "x": decal.x + dx, "y": decal.y + dy,
@@ -223,7 +223,7 @@ pub(super) fn within(cell: i32, offset: f32) -> f32 {
 /// which is the lowest cell of the box around it each way, and the entities that stand on it,
 /// which the engine copies. Its cells and its tiles are measured from the origin cell, in
 /// order. Its decals are those whose corner is on a cell of it that has a tile, as the engine
-/// has none elsewhere, in the order of their ids. None if its grid is not in the mirror.
+/// has none elsewhere, in the order the game draws them. None if its grid is not in the mirror.
 pub(super) fn region_copy(doc: &Doc, region: &Region) -> Option<(RegionCopy, (i32, i32), Vec<i32>)> {
     let grid = doc.grid(region.grid)?;
     let (left, bottom, _, _) = region.bounds();
@@ -248,7 +248,7 @@ pub(super) fn region_copy(doc: &Doc, region: &Region) -> Option<(RegionCopy, (i3
         })
         .map(|decal| Decal { x: decal.x - left as f32, y: decal.y - bottom as f32, ..decal.clone() })
         .collect();
-    decals.sort_unstable_by_key(|decal| decal.id);
+    decals.sort_unstable_by_key(|decal| (decal.order, decal.id));
     let uids = standing(doc, region).iter().map(|entity| entity.uid).collect();
     Some((RegionCopy { cells, tiles, decals }, (left, bottom), uids))
 }
@@ -290,7 +290,7 @@ pub(in crate::session) fn turn_ops(doc: &Doc, region: &Region, pivot: (i32, i32)
         ops.push(json!({ "kind": "rotate", "uid": entity.uid, "rotation": quarter_on(entity.rotation, clockwise) }));
     }
     let mut decals: Vec<_> = grid.decals.values().filter(|decal| on(region, decal.x, decal.y)).collect();
-    decals.sort_unstable_by_key(|decal| decal.id);
+    decals.sort_unstable_by_key(|decal| (decal.order, decal.id));
     for decal in decals {
         let middle = about(f64::from(decal.x) + 0.5, f64::from(decal.y) + 0.5);
         let mut at = ((middle.0 - 0.5) as f32, (middle.1 - 0.5) as f32);

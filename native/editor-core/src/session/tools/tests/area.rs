@@ -289,7 +289,7 @@ fn doc(session: &mut Session) -> &mut Doc {
 
 /// A decal of the grid with its corner at a position.
 fn decal(id: i32, x: f32, y: f32) -> Decal {
-    Decal { id, prototype: "Arrows".into(), x, y, color: Some("#FF0000FF".into()), angle: 1.5, z_index: 3, cleanable: true }
+    Decal { id, prototype: "Arrows".into(), x, y, color: Some("#FF0000FF".into()), angle: 1.5, z_index: 3, cleanable: true, order: id.into() }
 }
 
 /// The kind of each op, in order.

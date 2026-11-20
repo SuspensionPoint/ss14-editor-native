@@ -247,11 +247,9 @@ public static partial class VisualsCheck
                 onChunks++;
         }
 
+        // Such a fork keeps all its decals there, those of the old way moved there as the map loads.
         if (onChunks > 0)
-        {
-            var chunked = scene.Grids.Sum(grid => grid.Decals.Count(decal => decal.Id >= 65536));
-            tally.Expect(chunked == onChunks, $"every one of {onChunks} decals the file keeps on chunk entities is sent: {chunked}");
-        }
+            tally.Expect(sent == onChunks, $"every one of {onChunks} decals the file keeps on chunk entities is sent: {sent}");
 
         if (sent == 0)
         {

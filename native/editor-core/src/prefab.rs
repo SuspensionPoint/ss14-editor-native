@@ -142,7 +142,7 @@ impl Prefab {
             decals: header
                 .decals
                 .into_iter()
-                .map(|decal| Decal { id: decal.id, prototype: decal.prototype, x: decal.x, y: decal.y, color: decal.color, angle: decal.angle, z_index: decal.z_index, cleanable: decal.cleanable })
+                .map(|decal| Decal { id: decal.id, prototype: decal.prototype, x: decal.x, y: decal.y, color: decal.color, angle: decal.angle, z_index: decal.z_index, cleanable: decal.cleanable, order: decal.id.into() })
                 .collect(),
             text,
         })
@@ -386,7 +386,7 @@ pub(crate) mod tests {
                 CopiedTile { cell: (0, 0), tile: "FloorSteel".into(), variant: 2, rotation_mirroring: 5 },
                 CopiedTile { cell: (1, 0), tile: "FloorWood".into(), variant: 0, rotation_mirroring: 0 },
             ],
-            decals: vec![Decal { id: 7, prototype: "Arrows".into(), x: 0.25, y: 1.1, color: Some("#FF0000FF".into()), angle: 1.5707963267948966, z_index: -1, cleanable: true }],
+            decals: vec![Decal { id: 7, prototype: "Arrows".into(), x: 0.25, y: 1.1, color: Some("#FF0000FF".into()), angle: 1.5707963267948966, z_index: -1, cleanable: true, order: 7 }],
             text: "\nmeta:\r\n  format: 7\n- uid: 1\n  name: \"caf\u{e9} \\\"x\\\"\"\r\n\n".into(),
         }
     }

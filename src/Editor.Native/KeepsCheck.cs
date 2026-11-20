@@ -107,6 +107,17 @@ public static partial class KeepsCheck
                 continue;
             }
 
+            // A fork that keeps its decals on chunk entities moves a grid's own decals onto them
+            // as the map loads, as the game's DecalSystem does. Every decal must still be there.
+            if (kind == "DecalGrid" && OnChunks)
+            {
+                var (was, now) = (DecalCount(text), DecalCount(saved.Yaml));
+                say($"  {(was == now ? "found" : "FAIL ")} {kind}: {count} in the file, {kept} in the save. The game moves a grid's decals onto chunk entities as the map loads: {was} decals in the file, {now} on chunk entities in the save");
+                if (was != now)
+                    failures++;
+                continue;
+            }
+
             var known = factory.GetComponentAvailability(kind) == Robust.Shared.GameObjects.ComponentAvailability.Available ? "" : ", a kind this engine side does not know";
             say($"  FAIL  {kind}: {count} in the file, {kept} in the save{known}");
             failures++;
@@ -124,6 +135,33 @@ public static partial class KeepsCheck
 
         say($"  {before.Count} kinds of component, {before.Values.Sum()} in all, compared with {output}");
         return failures;
+    }
+
+    /// <summary>Whether the fork keeps its decals on chunk entities (FORK_DECAL_CHUNK_ENTITIES).</summary>
+#if FORK_DECAL_CHUNK_ENTITIES
+    private static readonly bool OnChunks = true;
+#else
+    private static readonly bool OnChunks = false;
+#endif
+
+    [GeneratedRegex(@"^            \d+: ")]
+    private static partial Regex DecalLine();
+
+    /// <summary>How many decals a map file lists, on its grids and on chunk entities.</summary>
+    private static int DecalCount(string yaml)
+    {
+        var (count, inDecals) = (0, false);
+        foreach (var line in yaml.Split('\n'))
+        {
+            if (ComponentLine().Match(line) is { Success: true } component)
+                inDecals = component.Groups[1].Value is "DecalGrid" or "DecalChunk";
+            else if (!line.StartsWith("      ", StringComparison.Ordinal))
+                inDecals = false;
+            else if (inDecals && DecalLine().IsMatch(line))
+                count++;
+        }
+
+        return count;
     }
 
     private sealed record Entity(string Prototype, List<string> Components);
