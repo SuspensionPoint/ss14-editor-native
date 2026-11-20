@@ -19,8 +19,8 @@
 //! The target is what Paint and Erase work on. It follows the palette: choosing a tile makes it
 //! Tiles. Setting it gives back what was last in hand for it (`Toolbox::recall`).
 //!
-//! The shapes, the select tool's targets, free placing and Erase's Only are kept in the
-//! settings file (`ToolOptions`).
+//! The shapes, the select tool's targets and shape, Select same's Contiguous, free placing and
+//! Erase's Only are kept in the settings file (`ToolOptions`).
 
 use serde::{Deserialize, Serialize};
 
@@ -174,6 +174,39 @@ impl Shape {
     }
 }
 
+/// The shape Select selects in, as an art program's marquee, lasso and magic wand. Each works
+/// on a region of cells with Tiles on, and on entities and decals with it off.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SelectShape {
+    /// A box dragged from corner to corner.
+    #[default]
+    Rectangle,
+    /// An ellipse inside the box dragged from corner to corner.
+    Ellipse,
+    /// A freehand line dragged around what is wanted, closed when the button comes up.
+    Lasso,
+    /// Corners clicked one at a time, closed on the first corner, by a double-click or Enter.
+    Polygon,
+    /// A click on a tile, an entity or a decal takes every one of its kind, touching or on the
+    /// whole grid (`ToolOptions::select_contiguous`).
+    Same,
+}
+
+impl SelectShape {
+    pub const ALL: [SelectShape; 5] = [SelectShape::Rectangle, SelectShape::Ellipse, SelectShape::Lasso, SelectShape::Polygon, SelectShape::Same];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            SelectShape::Rectangle => "Rectangle",
+            SelectShape::Ellipse => "Ellipse",
+            SelectShape::Lasso => "Lasso",
+            SelectShape::Polygon => "Polygon",
+            SelectShape::Same => "Select same",
+        }
+    }
+}
+
 /// How a box of the select tool changes what is selected. Shift and Ctrl give Add and
 /// Subtract for one press whatever the mode is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -274,7 +307,7 @@ impl SelectTargets {
 }
 
 /// The tool options kept in the settings file.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ToolOptions {
     pub paint_shape: Shape,
@@ -286,6 +319,25 @@ pub struct ToolOptions {
     pub place_free: bool,
     /// Whether Erase takes away only the kind in hand, and not everything of its target.
     pub erase_only: bool,
+    /// The shape Select selects in.
+    pub select_shape: SelectShape,
+    /// Whether Select same takes only what touches the thing clicked, cell by cell, and not
+    /// every one of its kind on the grid.
+    pub select_contiguous: bool,
+}
+
+impl Default for ToolOptions {
+    fn default() -> Self {
+        ToolOptions {
+            paint_shape: Shape::default(),
+            erase_shape: Shape::default(),
+            select: SelectTargets::default(),
+            place_free: false,
+            erase_only: false,
+            select_shape: SelectShape::default(),
+            select_contiguous: true,
+        }
+    }
 }
 
 /// What a tool key does when the tool in hand has not taken it.

@@ -19,7 +19,7 @@ the editor loads the same way on a server.
   and Erase work on tiles, entities or decals, at a point or in a line, rectangle or circle.
   Erase takes everything you can see, so hide a layer to keep what's on it, or turn on Only
   to erase just what's in hand. Fill floods an area of one tile with a tile, an entity or a
-  decal.
+  decal. R turns the entity you're about to put down, whatever the shape.
 - **Rooms**: drag out a room and get the floor inside, plating and walls round the edge, in
   one step. Walls already there are never stacked. Turn on Join overlapping rooms for
   hallways and extensions.
@@ -27,8 +27,10 @@ the editor loads the same way on a server.
   components in typed forms or as raw text, and put things into containers. Walls, windows,
   grilles and doors placed out in space get plating under them. You can switch this off or pick
   another tile.
-- **Select** entities, decals, or with Tiles a block of cells. Copy, cut, paste, turn or
-  delete a block with everything on it. Save a block as a prefab and stamp it onto any map.
+- **Select** entities, decals, or with Tiles a region of cells, with a rectangle, ellipse,
+  lasso or polygon, or Select same to grab every tile or thing like the one you click. A
+  region can be any shape. Copy, cut, paste, turn or delete it with everything on it. Save it
+  as a prefab and stamp it onto any map.
 - **Decals**, **cables** and **pipes**. Pipes fit themselves to their neighbours as you lay them.
 - **Device links**: hook buttons, sensors and alarms up to their devices, edit device lists,
   or auto-link a whole room.

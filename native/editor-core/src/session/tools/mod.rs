@@ -22,7 +22,7 @@
 //! `key_lost` says that a key is not down any more and was not seen to come up. Each asks the
 //! tool in hand in the same way, and `key_down` does so before it looks the key up with
 //! `crate::toolbox::key_action`. That is how R turns things with Select, Place or Area in
-//! hand, and is Paint's rectangle with any other. Those three take R going down as the beginning of a hold
+//! hand, or with Paint or Fill holding an entity or a decal, and is Paint's rectangle with any other. Those three take R going down as the beginning of a hold
 //! (`select::Turning`). While the hold lasts the entity tools take the wheel, which turns by
 //! five degrees a notch, and R coming up with the wheel not turned is a quarter turn
 //! (`rotate`). The area tool leaves the wheel to zoom, and R coming up turns its region. The
@@ -80,7 +80,9 @@
 //! during the drag changes nothing of it.
 //!
 //! **Entities from the brushes.** Paint, Fill, Rectangle, Line and Circle work with an entity
-//! chosen as well as a tile. They put one down in the middle of each cell, unturned, as the place tool sends it.
+//! chosen as well as a tile. They put one down in the middle of each cell, turned as the place
+//! tool is turned (`turns_placing`: R, Shift+R and R with the wheel turn it with any of them in
+//! hand, and their ghost shows it), as the place tool sends it.
 //! A cell with no tile is skipped, as is a cell that holds an entity of that prototype or that
 //! the same drag has put one on, since the mirror is behind the engine. The one exception is
 //! an entity that needs a floor (a wall, window, grille or door, as `floors::needs_floor` says), while
@@ -180,7 +182,13 @@
 //! the turn has to stay. What it ends beside the drag is a hold of R, which is to a key what a drag
 //! is to a button, and the wheel's lists, which no other tool would step through or close.
 //!
-//! **The region.** The area tool's `area::Region` is cells of one grid. It is the one state
+//! **Select's shapes.** Select draws a rectangle, an ellipse, a lasso or a polygon, or with
+//! Select same takes what is like the thing clicked (`marquee.rs`). With Tiles on each gives
+//! cells of one grid to `apply_region`, and with it off entities and decals to
+//! `apply_selection`, each by the mode. The polygon is the one shape that is no drag: it is
+//! kept in `marquee::Marqueeing` between presses, and `set_tool` drops it.
+//!
+//! **The region.** The area tool's `area::Region` is any set of cells of one grid. It is the one state
 //! that goes when its tool does: `set_tool` drops it when the tool changes to another, and not
 //! when the same tool is taken again. It is dropped too when a map is opened or made, when its
 //! grid leaves the mirror, on undo and redo, by Escape, by a secondary press off it and when
@@ -288,7 +296,7 @@
 //! adds itself to `overlay_quads`. Its key gets a row in `CONTROLS`.
 
 use super::*;
-use crate::toolbox::{BarTool, SelectMode};
+use crate::toolbox::{BarTool, SelectMode, SelectShape};
 
 mod area;
 mod connections;
@@ -297,6 +305,7 @@ mod floors;
 mod infra;
 mod link;
 mod look;
+mod marquee;
 mod nudge;
 mod paste;
 mod pick;
@@ -322,6 +331,9 @@ pub(super) use infra::Laying;
 pub use link::{EntityLinkRows, LinkChooser, LinkKind, LinkLine};
 pub(super) use link::Linking;
 pub use look::{HoverLook, PointerLook};
+use marquee::mode_style;
+pub use marquee::MarqueePath;
+pub(super) use marquee::Marqueeing;
 pub use nudge::{arrows_reach_map, Arrow};
 pub use pipes::{PipeNetwork, PipePieces, PIPE_COLOURS};
 pub use paste::{escape_to, Clipboard, CopiedTile, EscapeTo};
@@ -359,14 +371,15 @@ pub enum Tool {
 /// A tool's row is under its key alone, which is how `ToolEntry::control` finds it.
 pub const CONTROLS: &[(&str, &str)] = &[
     ("V", "Select: click or drag a box to select. The options bar says what it selects: entities, decals, or with Tiles a region of cells with everything on them. With Tiles on, pick Entities or Decals to select only those. Drag what's selected to move it. V selects entities and decals"),
-    ("S", "Select with Tiles: drag out a region of cells, one box at a time. Drag the region to move it with everything on it. Right-click it for its menu"),
+    ("S", "Select with Tiles: drag out a region of cells in the shape the options bar says. Drag the region to move it with everything on it. Right-click it for its menu"),
+    ("Select shapes", "Rectangle and Ellipse: drag from corner to corner. Lasso: drag around what you want. Polygon: click each corner, then click the first corner, double-click or press Enter. Select same: click a tile, entity or decal to select the others like it, only those touching it with Contiguous on. Each works on cells with Tiles on and on entities and decals with it off, up to 50,000 cells"),
     ("H", "Pan: drag the map"),
     ("I", "Pick: takes what's under the cursor into the palette, top first: an entity, then a decal with its settings, then the tile. The target follows it. Over a stack, the wheel steps through what's there and a click takes that row"),
     ("B", "Paint: puts the chosen tile, entity or decal down in the shape the options bar says. At a point, tiles go on each cell you drag over. Entities and decals go one per cell, skipping cells that already have one, or with Free one where the cursor is. Entities turn as R turned them. Shapes skip cells with no tile, but walls, windows, grilles and doors get a tile laid under them. You can switch that off in the options bar"),
     ("P", "Paint entities at a point: places the chosen entity, one per cell as you drag"),
     ("E", "Erase: removes everything of its target in the shape the options bar says: tiles, entities or decals. Entities on a hidden layer stay, and so do decals while their layer is hidden. Only removes just the kind in hand. Each stroke is one undo step"),
     ("G", "Fill: fills the area of the same tile under the cursor, up to 50,000 tiles. With entities or decals, puts one on each cell of that floor that doesn't have one, up to 10,000 cells"),
-    ("R", "Paint a rectangle: drag it out, up to 10,000 cells of entities or decals. With something to turn in hand, R turns it instead: a quarter clockwise for the selection, the entity Paint places, the region or the paste ghost, and the placement angle of a decal"),
+    ("R", "Paint a rectangle: drag it out, up to 10,000 cells of entities or decals. With something to turn in hand, R turns it instead: a quarter clockwise for the selection, the entity Paint or Fill puts down in any shape, the region or the paste ghost, and the placement angle of a decal"),
     ("L", "Paint a line: drag it out, up to 10,000 cells of entities or decals"),
     ("C", "Paint a circle: drag out a filled circle from the cell you press to the cursor's cell, up to 10,000 cells of entities or decals"),
     ("O", "Room: drag out a room, up to 10,000 cells. The tile in hand goes inside. Every edge cell gets the edge tile and a wall. Doors are up to you. Pick the wall in the options bar. Right-click or Escape cancels"),
@@ -374,17 +387,18 @@ pub const CONTROLS: &[(&str, &str)] = &[
     ("K", "Cables: drag a path of the chosen cable, one per cell, skipping cells that already have it. Right-drag removes that cable"),
     ("J", "Pipes: drag a path of the chosen pipe, each piece fitted to the cells it joins. Start or end on a pipe to join it. Right-drag removes pipes and refits the ones next to them"),
     ("Shift+R", "Turns a quarter the other way, where R turns"),
-    ("R held, wheel", "With Select, or Paint placing an entity, turns five degrees per notch. With a decal chosen and Paint in hand, turns its placement angle the same way"),
+    ("R held, wheel", "With Select, or Paint or Fill with an entity in hand, turns five degrees per notch. With a decal in hand, turns its placement angle the same way"),
     ("Shift+click", "Paint on entities or decals: place where the cursor is, or on the cell when Free is on. Select: add to the selection, or take a selected one out. Pasting: stamp with the middle of the ghost's first cell on the cursor"),
     ("Shift+drag", "Select: move unanchored things exactly with the cursor, or drag a box that adds to the selection or the region. The Add mode in the options bar does the same"),
     ("Ctrl+click, Ctrl+drag", "Select: remove an entity, or a box of them, from the selection, or a box from the region. The Subtract mode in the options bar does the same"),
-    ("Right-click", "Select: clear the selection or close the wheel's list. On a region, open its menu, and off it, clear the region. Pasting: stop pasting. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
+    ("Right-click", "Select: clear the selection or close the wheel's list, or drop a polygon being drawn. On a region, open its menu, and off it, clear the region. Pasting: stop pasting. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
     ("Wheel", "Zoom. With Select and one entity selected, over it where others overlap, step through them. With Pick, where two or more things could be picked, step through them"),
     ("Middle drag, Space+drag", "Pan with any tool"),
     ("Arrow keys", "Select: move the selected entities and decals one cell along the grid's own axes, one undo step per press. With a region, move it one cell with its tiles, decals, air and everything on it. Hold to repeat"),
     ("Shift+Arrow keys", "Select: move one pixel (1/32 of a cell) when nothing selected is anchored. If anything is anchored, one cell"),
     ("Delete, Backspace", "Delete the selection. With a region, delete the region and everything on it"),
-    ("Escape", "Close the region's menu, or else stop linking, or else stop pasting, or else clear the selection and the region, or close a dialog. In a side panel text field, only the field gets it"),
+    ("Enter", "Select: finish a polygon"),
+    ("Escape", "Close the region's menu, or else drop a polygon being drawn, or else stop linking, or else stop pasting, or else clear the selection and the region, or close a dialog. In a side panel text field, only the field gets it"),
     ("Ctrl+C", "Copy the selected entities and what they hold. With a region, copy the region with its tiles, decals and everything on it"),
     ("Ctrl+X", "Cut: copy the selected entities, or the region, then delete them in one step"),
     ("Ctrl+V", "Paste: a ghost of the copy follows the cursor by whole cells, with Select in hand. Each click stamps it as one step, and you can keep pasting"),
@@ -559,6 +573,7 @@ pub(super) enum Drag {
     Place(place::PlaceDrag),
     AreaBox(area::BoxDrag),
     AreaMove(area::MoveDrag),
+    Marquee(marquee::MarqueeDrag),
     Path(infra::PathDrag),
     Room(room::RoomDrag),
 }
@@ -575,6 +590,7 @@ impl Session {
     /// live and a hold of R, and closes the lists the wheel steps through. A change to another
     /// tool drops the area tool's region and ends pasting.
     pub fn set_tool(&mut self, tool: Tool) {
+        self.marqueeing.end();
         if tool != self.tool {
             self.region = None;
             self.pasting.end();
@@ -599,8 +615,8 @@ impl Session {
         let key = key.to_ascii_uppercase();
         let taken = match self.tool {
             Tool::Select | Tool::Place | Tool::Area => self.turn_key_down(key, shift),
-            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_turn_key(key, shift),
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => false,
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill => self.decal_turn_key(key, shift) || (self.turns_placing() && self.turn_key_down(key, shift)),
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => false,
         };
         if taken {
             return true;
@@ -619,8 +635,11 @@ impl Session {
         let key = key.to_ascii_uppercase();
         match self.tool {
             Tool::Select | Tool::Place | Tool::Area => self.turn_key_up(key),
-            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_turn_key_up(key),
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {}
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill => {
+                self.decal_turn_key_up(key);
+                self.turn_key_up(key);
+            }
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {}
         }
     }
 
@@ -632,15 +651,29 @@ impl Session {
         let key = key.to_ascii_uppercase();
         match self.tool {
             Tool::Select | Tool::Place | Tool::Area => self.turn_key_lost(key),
-            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_turn_key_up(key),
-            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Fill | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {}
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill => {
+                self.decal_turn_key_up(key);
+                self.turn_key_lost(key);
+            }
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Room | Tool::Link | Tool::Cable | Tool::Pipe => {}
         }
     }
 
     /// Whether the wheel turns things now, and does not zoom: an entity tool is in hand and R
     /// is held, or a brush places a decal and R is held since it turned the placement angle.
     pub fn wheel_turns(&self) -> bool {
-        (self.turning.is_live() && self.tool.is_entity_tool()) || self.decal_wheel_turns()
+        (self.turning.is_live() && (self.tool.is_entity_tool() || self.turns_placing())) || self.decal_wheel_turns()
+    }
+
+    /// Whether R turns what the tool in hand puts down next, and not the selection: the place
+    /// tool, or a brush or Fill with an entity in hand. Every tool that puts an entity down
+    /// puts it turned the same way (`place::Placing`).
+    pub(super) fn turns_placing(&self) -> bool {
+        match self.tool {
+            Tool::Place => true,
+            Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill => self.chosen_entity().is_some(),
+            Tool::Pan | Tool::Erase | Tool::Pick | Tool::Room | Tool::Area | Tool::Select | Tool::Link | Tool::Cable | Tool::Pipe => false,
+        }
     }
 
     /// Takes away a hint that asked for a choice in the palettes, now that one has been made.
@@ -670,6 +703,7 @@ impl Session {
                 Tool::Circle => self.shape_down(world, shapes::Shape::Circle),
                 Tool::Room => self.room_down(world),
                 Tool::Area if self.pasting.is_live() => self.region_paste_down(world),
+                Tool::Area | Tool::Select if self.marqueeing.is_live() => self.polygon_click(world, point, view),
                 Tool::Area => self.area_down(world),
                 Tool::Select if self.pasting.is_live() => self.paste_down(world),
                 Tool::Select => self.select_down(world, point),
@@ -685,6 +719,9 @@ impl Session {
                 }
                 Tool::Area | Tool::Select if self.pasting.is_live() => {
                     self.pasting.end();
+                }
+                Tool::Area | Tool::Select if self.marqueeing.is_live() => {
+                    self.marqueeing.end();
                 }
                 Tool::Area => self.area_secondary_down(world),
                 Tool::Select => self.select_secondary_down(),
@@ -716,6 +753,7 @@ impl Session {
             Drag::Place(drag) => self.place_dragged(world, drag),
             Drag::AreaBox(drag) => self.area_box_dragged(world, drag),
             Drag::AreaMove(drag) => self.area_move_dragged(world, drag),
+            Drag::Marquee(drag) => self.marquee_dragged(world, point, drag),
             Drag::Path(drag) => self.path_dragged(world, drag),
             Drag::Room(drag) => self.room_dragged(world, drag),
         };
@@ -731,6 +769,7 @@ impl Session {
             Drag::SelectBox(drag) => self.select_box_up(world, drag),
             Drag::AreaBox(drag) => self.area_box_up(world, drag),
             Drag::AreaMove(drag) => self.area_move_up(world, drag),
+            Drag::Marquee(drag) => self.marquee_up(world, point, drag),
             Drag::Path(drag) => self.path_up(drag),
             Drag::Room(drag) => self.room_up(drag),
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Place(_) => {}
@@ -760,7 +799,7 @@ impl Session {
     pub fn wheel(&mut self, notches: f32, point: (f32, f32), view: (u32, u32)) {
         let mut taken = match &self.drag {
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Rectangle(_) | Drag::Shape(_) | Drag::Move(_) | Drag::SelectBox(_) | Drag::Place(_) => false,
-            Drag::AreaBox(_) | Drag::AreaMove(_) | Drag::Path(_) | Drag::Room(_) => false,
+            Drag::AreaBox(_) | Drag::AreaMove(_) | Drag::Marquee(_) | Drag::Path(_) | Drag::Room(_) => false,
         };
         if !taken {
             taken = match self.tool {
@@ -769,8 +808,8 @@ impl Session {
                 Tool::Select => self.turn_wheel(notches) || self.step_wheel(notches, self.world_at(point, view)),
                 Tool::Place => self.turn_wheel(notches),
                 Tool::Pick => self.pick_wheel(notches, self.world_at(point, view)),
-                Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle => self.decal_wheel(notches),
-                Tool::Pan | Tool::Erase | Tool::Fill | Tool::Room | Tool::Area | Tool::Link | Tool::Cable | Tool::Pipe => false,
+                Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill => self.decal_wheel(notches) || self.turn_wheel(notches),
+                Tool::Pan | Tool::Erase | Tool::Room | Tool::Area | Tool::Link | Tool::Cable | Tool::Pipe => false,
             };
         }
         if !taken {
@@ -801,6 +840,7 @@ impl Session {
         self.decal_overlay(&mut over);
         self.shape_overlay(&mut over);
         self.area_overlay(&mut over);
+        self.marquee_overlay(&mut over);
         self.paste_overlay(&mut over);
         self.path_overlay(&mut over);
         self.room_overlay(&mut under, &mut over);
@@ -836,6 +876,8 @@ impl Session {
             Drag::Room(drag) => self.room_outlines(drag, &mut outlines),
             // The region is drawn where it would go, and no cell under the cursor.
             Drag::AreaMove(_) => {}
+            // Its outline is a path of its own (`marquee_path`).
+            Drag::Marquee(_) => {}
             Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Move(_) | Drag::Place(_) | Drag::Path(_) => self.hover_outlines(&mut outlines),
         }
         outlines
@@ -899,7 +941,10 @@ impl Session {
             Drag::AreaBox(drag) => self.area_box_label(drag),
             Drag::Path(drag) => self.path_label(drag),
             Drag::Room(drag) => self.room_label(drag),
-            Drag::None | Drag::Pan { .. } | Drag::Stroke(_) | Drag::Move(_) | Drag::SelectBox(_) | Drag::Place(_) | Drag::AreaMove(_) => None,
+            Drag::Marquee(_) => self.marquee_label(),
+            // A polygon being clicked out is no drag.
+            Drag::None => self.marquee_label(),
+            Drag::Pan { .. } | Drag::Stroke(_) | Drag::Move(_) | Drag::SelectBox(_) | Drag::Place(_) | Drag::AreaMove(_) => None,
         }
     }
 

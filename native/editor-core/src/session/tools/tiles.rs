@@ -177,13 +177,13 @@ impl Session {
     }
 
     /// Asks for an entity of a prototype in the middle of each of these cells of a grid,
-    /// unturned, in the form the place tool sends. A cell that already holds an entity of the
+    /// turned as the place tool turns it (R), in the form the place tool sends. A cell that already holds an entity of the
     /// prototype or is in `placed` is skipped. So is a cell with no tile, unless the prototype
     /// needs a floor and laying one is switched on (`floor_for`): then the tile is laid there
     /// first, in the same edit. The cells it puts one on go into `placed`.
     fn put_entities(&mut self, grid_uid: i32, cells: &[(i32, i32)], prototype: usize, label: &'static str, stroke: Option<u64>, placed: &mut HashSet<(i32, i32)>) {
         let Some(prototype) = self.prototypes.get(prototype) else { return };
-        let (id, floor) = (prototype.id.clone(), self.floor_for(prototype));
+        let (id, floor, rotation) = (prototype.id.clone(), self.floor_for(prototype), self.placing.rotation());
         let Some(doc) = self.doc.as_mut() else { return };
         let Some(grid) = doc.grids.iter().find(|grid| grid.uid == grid_uid) else { return };
         doc.active_grid = grid_uid;
@@ -201,7 +201,7 @@ impl Session {
                 laid.push(grid.cells_outline(cell, cell));
             }
             let (x, y) = (cell.0 as f32 + 0.5, cell.1 as f32 + 0.5);
-            spawns.push(json!({ "kind": "spawn", "prototype": id, "parent": grid_uid, "x": x, "y": y, "rotation": 0.0 }));
+            spawns.push(json!({ "kind": "spawn", "prototype": id, "parent": grid_uid, "x": x, "y": y, "rotation": rotation }));
         }
         // The tiles go first, so that no entity is put on a cell with no tile.
         ops.extend(spawns);

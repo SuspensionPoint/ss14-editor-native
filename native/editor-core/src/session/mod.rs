@@ -54,10 +54,10 @@ pub use grids::{GridRow, GRID_FILE, MAP_GROUND};
 pub use palettes::{shown_name, InHand};
 pub use problems::PLATING;
 pub use tools::{
-    arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MenuAction, MenuEntry, Outline,
+    arrows_reach_map, decal_colour_bytes, decal_colour_text, escape_to, Arrow, Button, CableKind, Clipboard, CopiedTile, DecalField, DecalGroup, DecalSettings, DecalSummary, EntityLinkRows, EscapeTo, Held, HoverLook, LinkChooser, LinkKind, LinkLine, MarqueePath, MenuAction, MenuEntry, Outline,
     OutlineStyle, PickList, Pickable, is_room_wall, needs_floor, PipeNetwork, PipePieces, PlacePreview, PointerLook, StackList, Tool, CONTROLS, PIPE_COLOURS,
 };
-use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Tooling, Turning};
+use tools::{Copying, Decaling, Drag, Flooring, Hint, Laying, Linking, Marqueeing, Painting, Pasting, Picking, Placing, Prefabs, Region, Stepping, Tooling, Turning};
 
 /// Where a session's pack and textures come from.
 enum Content {
@@ -380,6 +380,8 @@ pub struct Session {
     stepping: Stepping,
     /// The list of what could be picked on one cell that the pick tool's wheel steps through.
     picking: Picking,
+    /// A polygon of Select being clicked out.
+    marqueeing: Marqueeing,
     /// The cells the area tool has selected.
     region: Option<Region>,
     /// Where on the map the region's menu was opened, while it is open.
@@ -547,6 +549,7 @@ impl Session {
             turning: Turning::default(),
             stepping: Stepping::default(),
             picking: Picking::default(),
+            marqueeing: Marqueeing::default(),
             region: None,
             region_menu: None,
             region_waiting: None,

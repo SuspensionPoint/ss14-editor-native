@@ -19,6 +19,7 @@ mod grids;
 mod infra;
 mod links;
 mod look;
+mod marquee;
 mod nudge;
 mod palettes;
 mod paste;
@@ -33,6 +34,7 @@ mod select;
 mod shapes;
 mod tiles;
 mod toolbar;
+mod turning;
 mod view;
 
 const VIEW: (u32, u32) = (640, 640);

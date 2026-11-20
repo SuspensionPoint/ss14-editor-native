@@ -202,10 +202,16 @@ fn each_target_gives_back_what_was_last_in_hand_for_it() {
 
 #[test]
 fn the_options_read_back_from_their_settings_text() {
-    let options = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Rectangle, select: SelectTargets { entities: false, decals: true, tiles: true }, place_free: true, erase_only: true };
+    let options = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Rectangle, select: SelectTargets { entities: false, decals: true, tiles: true }, place_free: true, erase_only: true, select_shape: SelectShape::Polygon, select_contiguous: false };
     let text = serde_json::to_string(&options).unwrap();
     assert!(text.contains("\"circle\""), "{text}");
+    assert!(text.contains("\"polygon\""), "{text}");
     assert_eq!(serde_json::from_str::<ToolOptions>(&text).unwrap(), options);
     // Missing fields are the defaults.
     assert_eq!(serde_json::from_str::<ToolOptions>("{}").unwrap(), ToolOptions::default());
+    // Select same takes only what touches the thing clicked until told otherwise, and Select
+    // begins with the rectangle.
+    let default = ToolOptions::default();
+    assert!(default.select_contiguous);
+    assert_eq!(default.select_shape, SelectShape::Rectangle);
 }

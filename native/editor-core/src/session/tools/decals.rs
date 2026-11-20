@@ -174,7 +174,7 @@ impl Session {
     /// Whether the wheel turns the placement angle now: R held since it turned it, a decal
     /// chosen and a brush that places one in hand.
     pub(super) fn decal_wheel_turns(&self) -> bool {
-        self.decaling.held && self.chosen_decal().is_some() && matches!(self.tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle)
+        self.decaling.held && self.chosen_decal().is_some() && matches!(self.tool, Tool::Paint | Tool::Rectangle | Tool::Line | Tool::Circle | Tool::Fill)
     }
 
     /// The wheel turned with R held for a brush: the placement angle turns by five degrees a
@@ -372,13 +372,18 @@ impl Session {
     /// The decals whose middle is inside a box on the map, in the order of their grids and
     /// ids. None while the decal layer is hidden.
     pub(super) fn decals_in(&self, a: (f32, f32), b: (f32, f32)) -> Vec<(i32, i32)> {
-        let Some(doc) = self.doc.as_ref().filter(|_| self.layers.decals) else { return Vec::new() };
         let (left, right, bottom, top) = (a.0.min(b.0), a.0.max(b.0), a.1.min(b.1), a.1.max(b.1));
+        self.decals_where(|(x, y)| x >= left && x <= right && y >= bottom && y <= top)
+    }
+
+    /// The decals whose middle on the map passes a test, in the order of their grids and ids.
+    /// None while the decal layer is hidden.
+    pub(super) fn decals_where(&self, inside: impl Fn((f32, f32)) -> bool) -> Vec<(i32, i32)> {
+        let Some(doc) = self.doc.as_ref().filter(|_| self.layers.decals) else { return Vec::new() };
         let mut found = Vec::new();
         for grid in &doc.grids {
             for decal in grid.decals.values() {
-                let (x, y) = grid.to_world((decal.x + 0.5, decal.y + 0.5));
-                if x >= left && x <= right && y >= bottom && y <= top {
+                if inside(grid.to_world((decal.x + 0.5, decal.y + 0.5))) {
                     found.push((grid.uid, decal.id));
                 }
             }

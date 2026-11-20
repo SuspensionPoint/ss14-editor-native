@@ -293,17 +293,22 @@ fn the_brushes_show_the_chosen_entity_where_a_press_would_put_it() {
     let (mut session, _engine) = Session::offline(&scene());
     choose(&mut session, "SnapgridCenter");
     give_previews(&mut session, SQUARE);
-    // Turned with the place tool. The brushes put it down unturned all the same.
+    // Turned a quarter clockwise with the place tool. The brushes put it down turned the same.
     session.set_tool(Tool::Place);
     tap_r(&mut session, false);
+    // The ghost's corners a quarter on: the corner that was bottom left is top left.
+    let turned = [CELL_2_3[3], CELL_2_3[0], CELL_2_3[1], CELL_2_3[2]];
     for tool in [Tool::Paint, Tool::Rectangle, Tool::Line, Tool::Circle] {
         session.set_tool(tool);
-        // Off the cell's middle, and the ghost is on its middle, unturned and half seen through.
+        // Off the cell's middle, and the ghost is on its middle, turned and half seen through.
         session.pointer_move(at(&session, (2.25, 3.75)), VIEW);
-        assert_eq!(ghost(&mut session), CELL_2_3, "{tool:?}");
+        assert_eq!(ghost(&mut session), turned, "{tool:?}");
         assert_eq!(session.overlay_quads().1[11], 0.5, "{tool:?}");
         let preview = session.place_preview(1.0).expect("a preview");
-        assert_eq!((preview.at, preview.label.as_deref(), preview.facing, preview.square), ((2.5, 3.5), Some("Table"), None, None), "{tool:?}");
+        assert_eq!((preview.at, preview.label.as_deref(), preview.square), ((2.5, 3.5), Some("Table"), None), "{tool:?}");
+        // Facing left, with its arrow.
+        let facing = preview.facing.expect("an arrow");
+        assert_eq!((facing.0.round(), facing.1.round()), (-1.0, 0.0), "{tool:?}");
     }
     // The eraser deletes, and Fill knows tiles alone.
     for tool in [Tool::Erase, Tool::Fill, Tool::Pick, Tool::Select] {

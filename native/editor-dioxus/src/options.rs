@@ -5,7 +5,7 @@
 
 use dioxus_native::prelude::*;
 use editor_core::session::{decal_colour_bytes, CableKind, PipeNetwork, PIPE_COLOURS};
-use editor_core::toolbox::{BarTool, SelectMode, Shape, Target};
+use editor_core::toolbox::{BarTool, SelectMode, SelectShape, Shape, Target};
 
 use crate::icons::Icon;
 use crate::palettes::{ColourField, NumberField, PaletteTab};
@@ -290,19 +290,17 @@ fn DecalOptions() -> Element {
 /// What Select selects, its shape, and whether a press replaces the selection, adds to it or
 /// takes from it. With Tiles on it selects a region of cells, which takes everything on them,
 /// so Entities and Decals show off, and a press of either leaves the region for that one alone
-/// (`SelectTargets::toggle`).
+/// (`SelectTargets::toggle`). Select same has its Contiguous switch.
 #[component]
 fn SelectOptions() -> Element {
     let _ = watch();
-    let (targets, mode, region) = with(|editor| (editor.session.select_targets(), editor.session.select_mode(), editor.session.region_size()));
+    let (targets, mode, region, shape, contiguous) =
+        with(|editor| (editor.session.select_targets(), editor.session.select_mode(), editor.session.region_size(), editor.session.select_shape(), editor.session.select_contiguous()));
     let order = [Target::Entities, Target::Decals, Target::Tiles];
     let items: Vec<Choice> = order.iter().map(|&each| Choice::new(target_icon(each), each.name(), targets.lit(each))).collect();
+    let shapes: Vec<Choice> = SelectShape::ALL.iter().map(|&each| Choice::new(select_shape_icon(each), each.name(), each == shape)).collect();
     let modes: Vec<Choice> = SelectMode::ALL.iter().map(|&each| Choice::new(mode_icon(each), each.name(), each == mode)).collect();
-    let hint = match (targets.tiles, region) {
-        (true, 0) => "A region takes everything on its cells. Pick Entities or Decals to select only those".to_owned(),
-        (true, cells) => format!("{cells} cells. Right-click the region to copy, cut, delete or save it as a prefab"),
-        (false, _) => "Shift adds and Ctrl subtracts for one click".to_owned(),
-    };
+    let hint = select_hint(targets.tiles, region, shape);
     rsx! {
         Choices { label: "Select", items,
             onpick: move |at: usize| {
@@ -311,7 +309,24 @@ fn SelectOptions() -> Element {
             }
         }
         div { class: "options-rule" }
-        Choices { label: "Shape", items: vec![Choice::new("box", "Rectangle", true)], onpick: move |_| {} }
+        Choices { label: "Shape", items: shapes,
+            onpick: move |at: usize| {
+                with(|editor| editor.session.set_select_shape(SelectShape::ALL[at]));
+                bump();
+            }
+        }
+        if shape == SelectShape::Same {
+            label { class: "option-check", title: "Only what touches the one you click. Off takes every one on the grid",
+                input { r#type: "checkbox", class: "check", checked: contiguous,
+                    oninput: move |event| {
+                        let on = event.checked();
+                        with(|editor| editor.session.set_select_contiguous(on));
+                        bump();
+                    }
+                }
+                "Contiguous"
+            }
+        }
         div { class: "options-rule" }
         Choices { label: "Mode", items: modes,
             onpick: move |at: usize| {
@@ -320,6 +335,35 @@ fn SelectOptions() -> Element {
             }
         }
         span { class: "hint-text", "{hint}" }
+    }
+}
+
+/// The line of help after Select's options: the region's size and menu while there is one,
+/// and else how the shape in hand is drawn.
+pub(crate) fn select_hint(tiles: bool, region: usize, shape: SelectShape) -> String {
+    if tiles && region > 0 {
+        return format!("{region} cells. Right-click the region to copy, cut, delete or save it as a prefab");
+    }
+    let text = match (shape, tiles) {
+        (SelectShape::Rectangle, true) => "A region takes everything on its cells. Pick Entities or Decals to select only those",
+        (SelectShape::Rectangle, false) => "Shift adds and Ctrl subtracts for one click",
+        (SelectShape::Ellipse, _) => "Drag out an ellipse. Shift adds and Ctrl subtracts",
+        (SelectShape::Lasso, _) => "Drag around what you want. Letting go closes the loop",
+        (SelectShape::Polygon, _) => "Click to add corners. Click the first corner, double-click or press Enter to finish. Escape cancels",
+        (SelectShape::Same, true) => "Click a tile to select the tiles like it",
+        (SelectShape::Same, false) => "Click an entity or decal to select the others like it",
+    };
+    text.to_owned()
+}
+
+/// The icon of a shape of Select.
+fn select_shape_icon(shape: SelectShape) -> &'static str {
+    match shape {
+        SelectShape::Rectangle => "box",
+        SelectShape::Ellipse => "ellipse",
+        SelectShape::Lasso => "lasso",
+        SelectShape::Polygon => "polygon",
+        SelectShape::Same => "same",
     }
 }
 

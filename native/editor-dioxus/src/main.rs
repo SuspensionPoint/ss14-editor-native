@@ -421,6 +421,10 @@ fn key_event(event: &WindowEvent) {
                     }
                     return true;
                 }
+                // Enter closes a polygon of Select being clicked out.
+                if pressed && event.logical_key == WinitKey::Named(WinitNamed::Enter) && editor.session.enter_key() {
+                    return true;
+                }
                 if pressed && matches!(event.logical_key, WinitKey::Named(WinitNamed::Delete | WinitNamed::Backspace)) {
                     editor.session.delete_key();
                     return true;

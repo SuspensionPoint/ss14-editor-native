@@ -1,4 +1,4 @@
-//! The area tool: a region of cells of one grid, made of boxes, and moved, turned, deleted or
+//! The area tool: a region of cells of one grid, of any shape Select draws, and moved, turned, deleted or
 //! copied with what stands on it. A right-click on the region opens its menu.
 
 use super::paste::{CopiedTile, RegionCopy};
@@ -12,8 +12,9 @@ pub(super) const FILL: [f32; 4] = [50.0 / 255.0, 130.0 / 255.0, 1.0, 0.25];
 /// How faint the ghost of a region being moved is.
 const GHOST: f32 = 0.5;
 
-/// A region of more cells than this is not moved, turned, copied or deleted.
-const LIMIT: usize = 50_000;
+/// A region of more cells than this is not moved, turned, copied or deleted, and Select's
+/// shapes select no more than this.
+pub(super) const LIMIT: usize = 50_000;
 
 /// What an entry of the region's menu does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,20 +81,12 @@ impl Region {
     }
 }
 
-/// What a box does with its cells when it is let go.
-#[derive(Clone, Copy)]
-enum BoxMode {
-    Replace,
-    Add,
-    TakeAway,
-}
-
 /// A box of cells being dragged out on one grid.
 pub(in crate::session) struct BoxDrag {
     grid: i32,
     from: (i32, i32),
     to: (i32, i32),
-    mode: BoxMode,
+    mode: SelectMode,
 }
 
 /// The region being moved: the cell that was pressed, how many cells it has gone, and the
@@ -396,21 +389,24 @@ impl Session {
         self.edit(ops, "Delete region", None, false);
     }
 
-    /// The area tool was pressed. A plain press on a cell of the region begins a move of it,
+    /// The area tool was pressed. Select same takes the cells of the tile pressed. A plain press on a cell of the region begins a move of it,
     /// unless the region is too large to move or the engine has yet to answer its last move
-    /// or turn, which the status line then says. Any other
-    /// press begins a box on the grid under it: one that takes away with Ctrl held, one that
-    /// adds with Shift, and else one that takes the region's place.
+    /// or turn, which the status line then says. Any other press begins Select's shape on the
+    /// grid under it (a box, or `marquee_down` for the others): one that takes away with Ctrl
+    /// held, one that adds with Shift, and else one that takes the region's place.
     pub(super) fn area_down(&mut self, world: (f32, f32)) {
+        let mode = self.press_mode();
+        if self.select_shape() == SelectShape::Same {
+            self.select_same_tiles(world, mode);
+            return;
+        }
         let Some((grid, cell)) = self.cell_at(world) else { return };
-        let mode = match self.press_mode() {
-            SelectMode::Subtract => BoxMode::TakeAway,
-            SelectMode::Add => BoxMode::Add,
-            SelectMode::Replace => BoxMode::Replace,
-        };
-        let pressed = self.region.as_ref().filter(|region| matches!(mode, BoxMode::Replace) && region.grid == grid && region.cells.contains(&cell));
+        let pressed = self.region.as_ref().filter(|region| mode == SelectMode::Replace && region.grid == grid && region.cells.contains(&cell));
         if pressed.is_none() {
-            self.drag = Drag::AreaBox(BoxDrag { grid, from: cell, to: cell, mode });
+            match self.select_shape() {
+                SelectShape::Rectangle => self.drag = Drag::AreaBox(BoxDrag { grid, from: cell, to: cell, mode }),
+                shape => self.marquee_down(world, Some(grid), shape, mode),
+            }
             return;
         }
         if self.region_held_back("moved") {
@@ -507,19 +503,26 @@ impl Session {
     /// of one grid, so a box on another grid adds to nothing and takes nothing away.
     pub(super) fn area_box_up(&mut self, world: (f32, f32), drag: BoxDrag) {
         let Drag::AreaBox(BoxDrag { grid, from, to, mode }) = self.area_box_dragged(world, drag) else { return };
-        let boxed = box_cells(from, to);
+        self.apply_region(grid, box_cells(from, to), mode);
+    }
+
+    /// Cells of a grid that a shape of Select picked: they take the region's place, are
+    /// added to it or are taken out of it, as the mode says. A region with no cells left is
+    /// no region. A region is of one grid, so cells of another grid add to nothing and take
+    /// nothing away.
+    pub(super) fn apply_region(&mut self, grid: i32, picked: impl IntoIterator<Item = (i32, i32)>, mode: SelectMode) {
         let mut cells = match self.region.take() {
             Some(region) if region.grid == grid => region.cells,
-            Some(region) if matches!(mode, BoxMode::TakeAway) => {
+            Some(region) if mode == SelectMode::Subtract => {
                 self.region = Some(region);
                 return;
             }
             _ => HashSet::new(),
         };
         match mode {
-            BoxMode::Replace => cells = boxed.collect(),
-            BoxMode::Add => cells.extend(boxed),
-            BoxMode::TakeAway => boxed.for_each(|cell| {
+            SelectMode::Replace => cells = picked.into_iter().collect(),
+            SelectMode::Add => cells.extend(picked),
+            SelectMode::Subtract => picked.into_iter().for_each(|cell| {
                 cells.remove(&cell);
             }),
         }
@@ -566,11 +569,7 @@ impl Session {
 
     /// The outline of a box being dragged out, in the colour of what the box does.
     pub(super) fn area_box_outlines(&self, drag: &BoxDrag, outlines: &mut Vec<Outline>) {
-        let style = match drag.mode {
-            BoxMode::Replace => OutlineStyle::Drag,
-            BoxMode::Add => OutlineStyle::DragAdd,
-            BoxMode::TakeAway => OutlineStyle::DragTakeAway,
-        };
+        let style = mode_style(drag.mode);
         if let Some(grid) = self.doc.as_ref().and_then(|doc| doc.grid(drag.grid)) {
             outlines.push(Outline { corners: grid.cells_outline(drag.from, drag.to), style });
         }

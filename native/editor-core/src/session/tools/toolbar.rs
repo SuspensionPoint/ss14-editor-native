@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::forks::settings::Settings;
-use crate::toolbox::{BarTool, KeyAction, SelectMode, SelectTargets, Shape, Target, ToolOptions, Toolbox};
+use crate::toolbox::{BarTool, KeyAction, SelectMode, SelectShape, SelectTargets, Shape, Target, ToolOptions, Toolbox};
 
 /// The toolbar's state, and the settings file its options are kept in.
 #[derive(Default)]
@@ -109,6 +109,21 @@ impl Session {
         if self.bar_tool() == BarTool::Select {
             self.take_bar_tool(BarTool::Select);
         }
+        self.save_tool_options();
+    }
+
+    /// Sets the shape Select selects in and keeps it. A shape being drawn is dropped.
+    pub fn set_select_shape(&mut self, shape: SelectShape) {
+        self.tooling.toolbox.options.select_shape = shape;
+        if self.bar_tool() == BarTool::Select {
+            self.take_bar_tool(BarTool::Select);
+        }
+        self.save_tool_options();
+    }
+
+    /// Sets whether Select same takes only what touches the thing clicked, and keeps it.
+    pub fn set_select_contiguous(&mut self, contiguous: bool) {
+        self.tooling.toolbox.options.select_contiguous = contiguous;
         self.save_tool_options();
     }
 

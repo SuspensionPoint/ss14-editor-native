@@ -17,5 +17,5 @@ ISC licence in `icons/LICENSE-lucide.txt`. Copyright (c) for portions of Lucide 
 Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by
 Lucide Contributors 2022.
 
-`pipe.svg`, `point.svg` and `line.svg` were drawn for this editor in Lucide's style, and are
+`pipe.svg`, `point.svg`, `line.svg` and `polygon-lasso.svg` were drawn for this editor in Lucide's style, and are
 shared under the editor's MIT licence.

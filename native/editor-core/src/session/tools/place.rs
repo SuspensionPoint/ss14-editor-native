@@ -74,6 +74,11 @@ pub(in crate::session) struct Placing {
 }
 
 impl Placing {
+    /// How what is placed next is turned, in radians.
+    pub(super) fn rotation(&self) -> f64 {
+        self.rotation
+    }
+
     /// Turns what is placed next by a step in radians.
     pub(super) fn turn(&mut self, step: f64) {
         self.rotation = (self.rotation + step).rem_euclid(std::f64::consts::TAU);
@@ -268,7 +273,7 @@ impl Session {
 
     /// Where a press of the tool in hand would put the chosen entity, for its ghost. The place
     /// tool puts it where `place_target` says, turned as it is turned. Paint, Rectangle, Line
-    /// and Circle put it on the middle of the cell under the cursor, unturned, which is the
+    /// and Circle put it on the middle of the cell under the cursor, turned the same, which is the
     /// first cell of a press. None during a shape's drag, which shows its cells, and where
     /// `ghost_hover` is None.
     fn ghost_target(&self) -> Option<GhostTarget> {
@@ -287,7 +292,15 @@ impl Session {
             let grid = doc.grid_at(world)?;
             let cell = grid.cell_at(world);
             let at = grid.to_world((cell.0 as f32 + 0.5, cell.1 as f32 + 0.5));
-            return Some(GhostTarget { index, at, square: grid.cells_outline(cell, cell), turns: 0, angle: grid.rotation, facing: None, free: false });
+            return Some(GhostTarget {
+                index,
+                at,
+                square: grid.cells_outline(cell, cell),
+                turns: self.place_turns(),
+                angle: grid.rotation + self.place_turn_past_quarters(),
+                facing: (self.placing.rotation != 0.0).then_some(self.placing.rotation as f32 + grid.rotation),
+                free: false,
+            });
         }
         let (parent, local, at, grid_turned) = self.place_target(world)?;
         Some(GhostTarget {

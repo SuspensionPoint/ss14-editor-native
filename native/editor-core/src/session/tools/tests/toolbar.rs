@@ -4,7 +4,7 @@
 use super::decals::decals_on_map;
 use super::*;
 use crate::forks::settings::Settings;
-use crate::toolbox::{BarTool, SelectMode, SelectTargets, Shape, Target, ToolOptions};
+use crate::toolbox::{BarTool, SelectMode, SelectShape, SelectTargets, Shape, Target, ToolOptions};
 
 /// Presses a key and lets it go.
 fn tap(session: &mut Session, key: char) {
@@ -258,12 +258,14 @@ fn the_options_are_kept_in_the_settings_file() {
     session.take_bar_tool(BarTool::Select);
     session.toggle_select_target(Target::Decals);
     session.set_place_free(true);
+    session.set_select_shape(SelectShape::Lasso);
+    session.set_select_contiguous(false);
     // The mode is not kept.
     session.set_select_mode(SelectMode::Subtract);
 
     let read = Settings::load(&file);
     assert!(read.animate_sprites);
-    let kept = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Line, select: SelectTargets { entities: true, decals: false, tiles: false }, place_free: true, erase_only: false };
+    let kept = ToolOptions { paint_shape: Shape::Circle, erase_shape: Shape::Line, select: SelectTargets { entities: true, decals: false, tiles: false }, place_free: true, erase_only: false, select_shape: SelectShape::Lasso, select_contiguous: false };
     assert_eq!(read.tools, kept);
 
     // A session reads them back.

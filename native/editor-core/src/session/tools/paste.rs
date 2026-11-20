@@ -554,7 +554,7 @@ impl Session {
     /// menu, or else ends linking, or else ends pasting, or else clears the selection and the region. An interface asks [`escape_to`]
     /// first whether Escape is the map's.
     pub fn escape(&mut self) {
-        if self.cancel_room() || self.region_menu.take().is_some() || self.cancel_linking() {
+        if self.cancel_room() || self.region_menu.take().is_some() || self.marqueeing.end() || self.cancel_linking() {
             return;
         }
         if !self.pasting.end() {
