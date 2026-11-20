@@ -328,9 +328,9 @@ impl Session {
         self.close_polygon();
     }
 
-    /// Enter: closes a polygon being clicked out, which selects what it covers, or for Paint
-    /// and Erase puts down or takes away what it covers (`trace.rs`). Says whether there was
-    /// one.
+    /// Enter: closes a polygon being clicked out, which selects what it covers, or for Paint,
+    /// Erase and the Room tool puts down or builds what it covers (`trace.rs`). Says whether
+    /// there was one.
     pub fn enter_key(&mut self) -> bool {
         if self.close_trace() {
             return true;
@@ -478,7 +478,7 @@ impl Session {
 
     /// The outline of the shape of Select being drawn. An ellipse of a region fills the box of
     /// cells it goes by. A polygon is open, from its first corner to the cursor.
-    /// A lasso or polygon of Paint or Erase gives its own (`trace_path`).
+    /// A lasso or polygon of Paint, Erase or the Room tool gives its own (`trace_path`).
     pub fn marquee_path(&self) -> Option<MarqueePath> {
         let Some((covered, grid, mode)) = self.drawn_shape() else { return self.trace_path() };
         let style = mode_style(mode);

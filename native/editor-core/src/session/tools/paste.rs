@@ -550,7 +550,7 @@ impl Session {
         }
     }
 
-    /// Escape on the map: drops a room being dragged out, or else closes the area tool's menu, or
+    /// Escape on the map: drops a room being drawn, or else closes the area tool's menu, or
     /// else drops a polygon being clicked out, or else ends linking, or else ends pasting, or else clears the selection and the region. An interface asks [`escape_to`]
     /// first whether Escape is the map's.
     pub fn escape(&mut self) {

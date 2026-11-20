@@ -177,8 +177,11 @@ pub(crate) fn RoomOptions() -> Element {
         };
         (floor, wall, walls, editor.session.room_intersection())
     });
+    let shape = with(|editor| editor.session.room_shape());
     let (wall_name, wall_picture) = wall.unwrap_or(("No wall chosen".to_owned(), None));
     rsx! {
+        crate::options::RoomShapeChoices { shape }
+        div { class: "options-rule" }
         span { class: "options-label", "Floor" }
         if let Some((id, picture)) = floor {
             span { class: "chip static", title: "The tile in hand goes inside", Pictured { picture, name: id } }
@@ -219,5 +222,16 @@ pub(crate) fn RoomOptions() -> Element {
             }
             "Join overlapping rooms"
         }
+        span { class: "hint-text", "{room_shape_hint(shape)}" }
+    }
+}
+
+/// The line of help after the Room tool's options: how a lasso or polygon is drawn.
+fn room_shape_hint(shape: editor_core::toolbox::RoomShape) -> &'static str {
+    use editor_core::toolbox::RoomShape;
+    match shape {
+        RoomShape::Rectangle | RoomShape::Ellipse => "",
+        RoomShape::Lasso => "Drag around the room. Letting go closes the loop",
+        RoomShape::Polygon => "Click each corner. Click the first one, double-click or press Enter to finish",
     }
 }

@@ -20,8 +20,8 @@ the editor loads the same way on a server.
   lasso or polygon. Closed shapes can be filled or just their outline. Erase takes everything you can see, so hide a layer to keep what's on it, or turn on Only
   to erase just what's in hand. Fill floods an area of one tile with a tile, an entity or a
   decal. R turns the entity you're about to put down, whatever the shape.
-- **Rooms**: drag out a room and get the floor inside, plating and walls round the edge, in
-  one step. Walls already there are never stacked. Turn on Join overlapping rooms for
+- **Rooms**: draw a room as a rectangle, ellipse, lasso or polygon and get the floor inside,
+  plating and walls round the edge, in one step, with no gap at a corner. Walls already there are never stacked. Turn on Join overlapping rooms for
   hallways and extensions.
 - **Entities**: place, select, move, turn, delete, and nudge with the arrow keys. Edit
   components in typed forms or as raw text, and put things into containers. Walls, windows,

@@ -5,7 +5,7 @@
 
 use dioxus_native::prelude::*;
 use editor_core::session::{decal_colour_bytes, CableKind, PipeNetwork, PIPE_COLOURS};
-use editor_core::toolbox::{BarTool, SelectMode, SelectShape, Shape, ShapeFill, Target};
+use editor_core::toolbox::{BarTool, RoomShape, SelectMode, SelectShape, Shape, ShapeFill, Target};
 
 use crate::icons::Icon;
 use crate::palettes::{ColourField, NumberField, PaletteTab};
@@ -237,6 +237,26 @@ fn FillChoices(fill: ShapeFill) -> Element {
         Choices { label: "", items,
             onpick: move |at: usize| {
                 with(|editor| editor.session.set_shape_fill(ShapeFill::ALL[at]));
+                bump();
+            }
+        }
+    }
+}
+
+/// The shape the Room tool builds in, with the icons of Select's shapes of the same names.
+#[component]
+pub(crate) fn RoomShapeChoices(shape: RoomShape) -> Element {
+    let icon = |each: RoomShape| match each {
+        RoomShape::Rectangle => "box",
+        RoomShape::Ellipse => "ellipse",
+        RoomShape::Lasso => "lasso",
+        RoomShape::Polygon => "polygon",
+    };
+    let items: Vec<Choice> = RoomShape::ALL.iter().map(|&each| Choice::new(icon(each), each.name(), each == shape)).collect();
+    rsx! {
+        Choices { label: "Shape", items,
+            onpick: move |at: usize| {
+                with(|editor| editor.session.set_room_shape(RoomShape::ALL[at]));
                 bump();
             }
         }

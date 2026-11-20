@@ -1,8 +1,16 @@
-//! The Room tool: a rectangle dragged out on one grid that becomes a room in one edit. The
-//! floor tile in hand goes on the cells inside, the tile laid under walls (`floor_tile`) on
-//! the cells of its edge, and the Room tool's wall (`room_wall`) on the cells of its edge.
-//! Doors are left to the mapper. A room of more than `SHAPE_LIMIT` cells is refused, as a
-//! shape of entities is.
+//! The Room tool: a shape drawn on one grid that becomes a room in one edit. The floor tile in
+//! hand goes on the cells inside, the tile laid under walls (`floor_tile`) on the cells of its
+//! edge, and the Room tool's wall (`room_wall`) on the cells of its edge. Doors are left to the
+//! mapper. A room of more than `SHAPE_LIMIT` cells is refused, as a shape of entities is.
+//!
+//! Its shape (`RoomShape`, kept for each fork) is a rectangle or an ellipse dragged from corner
+//! to corner, or a lasso or polygon traced as Paint's are (`trace.rs`). The cells are those
+//! Select's shape of the same name takes. Whatever the shape, its edge is each of its cells
+//! with any of its eight neighbours outside it, and the rest is inside (`room_split`). So every
+//! cell inside has all eight neighbours in the room, and a step side by side from one never
+//! leaves the room without crossing the edge: the walls close it with no gap at a corner.
+//! A rectangle too thin to have an inside builds its walls alone, a line of wall, as it always
+//! has. Any other shape with no cell inside is refused, since it would be a scatter of walls.
 //!
 //! What it does where walls stand already (any wall, as `Prototype::is_wall` tells) depends
 //! on its Intersection switch:
@@ -21,8 +29,11 @@
 //! edge is left open, so it builds no wall and only lays its floor inside, and the status bar
 //! says so.
 
+use super::marquee::{ellipse_cells, TooMany};
 use super::tiles::{rectangle_cells, SHAPE_LIMIT};
+use super::trace::{DrawnRoom, Purpose, Trace};
 use super::*;
+use crate::toolbox::RoomShape;
 
 /// How faint the ghost of a room's walls is.
 const WALL_GHOST: f32 = 0.5;
@@ -30,13 +41,26 @@ const WALL_GHOST: f32 = 0.5;
 /// The colour of the mark on a cell whose wall a room would take away.
 const REMOVED_MARK: [f32; 4] = [1.0, 0.25, 0.2, 0.45];
 
-/// A room being dragged out on one grid.
+/// A rectangle or ellipse of a room being dragged out on one grid.
 pub(in crate::session) struct RoomDrag {
     grid: i32,
     from: (i32, i32),
     to: (i32, i32),
     /// The floor tile in hand at the press. None when no tile was in hand. It builds nothing then.
     floor: Option<String>,
+    /// Whether it is the ellipse inside the box, and not the box.
+    ellipse: bool,
+}
+
+impl RoomDrag {
+    /// Its cells, or too many past `SHAPE_LIMIT`.
+    fn cells(&self) -> Result<Vec<(i32, i32)>, TooMany> {
+        if self.ellipse {
+            return ellipse_cells(self.from, self.to, SHAPE_LIMIT);
+        }
+        let size = (((self.from.0 - self.to.0).abs() + 1) as usize) * (((self.from.1 - self.to.1).abs() + 1) as usize);
+        if size > SHAPE_LIMIT { Err(TooMany) } else { Ok(rectangle_cells(self.from, self.to)) }
+    }
 }
 
 /// What a room would do to its cells, as worked out from the map before it is built, and for
@@ -53,11 +77,21 @@ pub(super) struct RoomPlan {
     pub(super) removed: Vec<((i32, i32), i32)>,
 }
 
-/// The cells of a room from one corner to the other: those inside, and those of its edge.
-pub(super) fn room_cells(from: (i32, i32), to: (i32, i32)) -> (Vec<(i32, i32)>, Vec<(i32, i32)>) {
-    let (left, right) = (from.0.min(to.0), from.0.max(to.0));
-    let (bottom, top) = (from.1.min(to.1), from.1.max(to.1));
-    rectangle_cells(from, to).into_iter().partition(|&(x, y)| x != left && x != right && y != bottom && y != top)
+/// The cells of a rectangular room from one corner to the other: those inside, and those of
+/// its edge.
+#[cfg(test)]
+pub(super) fn room_cells(from: (i32, i32), to: (i32, i32)) -> Split {
+    room_split(&rectangle_cells(from, to))
+}
+
+/// The cells of a room, those inside and those of its edge.
+pub(super) type Split = (Vec<(i32, i32)>, Vec<(i32, i32)>);
+
+/// The cells of a room of any shape, in their order: those inside, with all eight neighbours
+/// in the room, and those of its edge, with any outside it.
+pub(super) fn room_split(cells: &[(i32, i32)]) -> Split {
+    let set: HashSet<(i32, i32)> = cells.iter().copied().collect();
+    cells.iter().partition(|&&(x, y)| (-1..=1).all(|dx| (-1..=1).all(|dy| set.contains(&(x + dx, y + dy)))))
 }
 
 impl Session {
@@ -72,8 +106,14 @@ impl Session {
         if let Some(index) = self.room_wall() {
             self.want_previews(&[index]);
         }
+        let ellipse = match self.room_shape() {
+            RoomShape::Rectangle => false,
+            RoomShape::Ellipse => true,
+            RoomShape::Lasso => return self.trace_down(world, Trace::Lasso, Purpose::Room { floor }),
+            RoomShape::Polygon => return self.trace_down(world, Trace::Polygon, Purpose::Room { floor }),
+        };
         if let Some((grid, cell)) = self.cell_at(world) {
-            self.drag = Drag::Room(RoomDrag { grid, from: cell, to: cell, floor });
+            self.drag = Drag::Room(RoomDrag { grid, from: cell, to: cell, floor, ellipse });
         }
     }
 
@@ -85,32 +125,32 @@ impl Session {
 
     /// A room was let go: builds it, as one edit.
     pub(super) fn room_up(&mut self, drag: RoomDrag) {
-        let RoomDrag { grid, from, to, floor } = drag;
-        if let Some(floor) = floor {
-            self.build_room(grid, from, to, &floor);
+        let Some(floor) = drag.floor.clone() else { return };
+        match drag.cells() {
+            Ok(cells) => self.build_room(drag.grid, &cells, &floor, !drag.ellipse),
+            Err(TooMany) => self.set_status(format!("Not built: the room has more than {} cells", thousands(SHAPE_LIMIT))),
         }
     }
 
-    /// A room being dragged out is dropped and builds nothing, as by Escape or a press of the
-    /// secondary button while it is dragged. Returns whether there was one.
+    /// A room being drawn is dropped and builds nothing, as by Escape or a press of the
+    /// secondary button while it is drawn: a rectangle or ellipse being dragged, or a lasso or
+    /// polygon being traced. Returns whether there was one.
     pub fn cancel_room(&mut self) -> bool {
         let dropped = matches!(self.drag, Drag::Room(_));
         if dropped {
             self.drag = Drag::None;
         }
-        dropped
+        self.cancel_room_trace() || dropped
     }
 
-    /// The walls standing on a grid inside a rectangle of cells, by cell: entities not inside
-    /// another whose prototype is a wall, as uids in order.
-    fn walls_in(&self, grid_uid: i32, from: (i32, i32), to: (i32, i32)) -> HashMap<(i32, i32), Vec<i32>> {
+    /// The walls standing on these cells of a grid, by cell: entities not inside another whose
+    /// prototype is a wall, as uids in order.
+    fn walls_in(&self, grid_uid: i32, cells: &HashSet<(i32, i32)>) -> HashMap<(i32, i32), Vec<i32>> {
         let mut walls: HashMap<(i32, i32), Vec<i32>> = HashMap::new();
         let Some(doc) = self.doc.as_ref() else { return walls };
-        let (left, right) = (from.0.min(to.0), from.0.max(to.0));
-        let (bottom, top) = (from.1.min(to.1), from.1.max(to.1));
         for entity in doc.entities.values().filter(|entity| entity.parent == grid_uid && !entity.contained) {
             let cell = (entity.x.floor() as i32, entity.y.floor() as i32);
-            if cell.0 < left || cell.0 > right || cell.1 < bottom || cell.1 > top {
+            if !cells.contains(&cell) {
                 continue;
             }
             if self.prototype_indices.get(&entity.prototype).is_some_and(|&index| self.prototypes[index].is_wall()) {
@@ -123,15 +163,15 @@ impl Session {
         walls
     }
 
-    /// What a room from one corner to the other would do to the cells of a grid, as the
-    /// module's notes tell, with the Intersection switch as it is.
-    pub(super) fn plan_room(&self, grid_uid: i32, from: (i32, i32), to: (i32, i32)) -> RoomPlan {
+    /// What a room of these cells would do to the cells of a grid, as the module's notes
+    /// tell, with the Intersection switch as it is.
+    pub(super) fn plan_room(&self, grid_uid: i32, cells: &[(i32, i32)]) -> RoomPlan {
         let mut plan = RoomPlan::default();
         let Some(doc) = self.doc.as_ref() else { return plan };
         let join = self.room_intersection();
         let edge_tile = self.floor_tile();
-        let walls = self.walls_in(grid_uid, from, to);
-        let (inside, edge) = room_cells(from, to);
+        let walls = self.walls_in(grid_uid, &cells.iter().copied().collect());
+        let (inside, edge) = room_split(cells);
         for cell in inside {
             match walls.get(&cell) {
                 Some(uids) if join => {
@@ -156,14 +196,18 @@ impl Session {
         plan
     }
 
-    /// Builds a room on a grid from one corner to the other, as one edit with no stroke: the
-    /// walls it takes away first, then the tiles, so that no wall goes on a cell with no tile,
-    /// then the new walls. A room of more than `SHAPE_LIMIT` cells, or with no wall to build
-    /// with, is refused with a line on the status bar.
-    fn build_room(&mut self, grid_uid: i32, from: (i32, i32), to: (i32, i32), floor: &str) {
-        let size = (((from.0 - to.0).abs() + 1) as usize) * (((from.1 - to.1).abs() + 1) as usize);
-        if size > SHAPE_LIMIT {
+    /// Builds a room of these cells of a grid, as one edit with no stroke: the walls it takes
+    /// away first, then the tiles, so that no wall goes on a cell with no tile, then the new
+    /// walls. A room of more than `SHAPE_LIMIT` cells, or with no wall to build with, is
+    /// refused with a line on the status bar, and so is a room with no cell inside unless
+    /// `thin` lets it build its walls alone.
+    pub(super) fn build_room(&mut self, grid_uid: i32, cells: &[(i32, i32)], floor: &str, thin: bool) {
+        if cells.len() > SHAPE_LIMIT {
             self.set_status(format!("Not built: the room has more than {} cells", thousands(SHAPE_LIMIT)));
+            return;
+        }
+        if !thin && room_split(cells).0.is_empty() {
+            self.set_status("Not built: the shape is too thin to have an inside");
             return;
         }
         let Some(wall) = self.room_wall().map(|index| self.prototypes[index].id.clone()) else {
@@ -171,7 +215,7 @@ impl Session {
             return;
         };
         let edge_tile = self.floor_tile().to_owned();
-        let plan = self.plan_room(grid_uid, from, to);
+        let plan = self.plan_room(grid_uid, cells);
         let Some(doc) = self.doc.as_mut() else { return };
         let Some(grid) = doc.grids.iter().find(|grid| grid.uid == grid_uid) else { return };
         doc.active_grid = grid_uid;
@@ -205,19 +249,23 @@ impl Session {
         }
     }
 
-    /// The ghost of a room being dragged out, for `overlay_quads`, as it would be built: its
-    /// floor and edge tiles faint over the map, and the cells of its edge left open in their
-    /// own tile (`under`), the wall's picture faint on each cell it would wall once the engine
-    /// has sent it, and a red mark on each cell whose wall it would take away (`over`). A room
-    /// too large to build shows its outline alone.
-    pub(super) fn room_overlay(&mut self, under: &mut Vec<f32>, over: &mut Vec<f32>) {
-        let Drag::Room(drag) = &self.drag else { return };
-        let (grid, from, to, floor) = (drag.grid, drag.from, drag.to, drag.floor.clone());
-        let size = (((from.0 - to.0).abs() + 1) as usize) * (((from.1 - to.1).abs() + 1) as usize);
-        if size > SHAPE_LIMIT {
-            return;
+    /// The room being drawn: its grid, its cells (too many past `SHAPE_LIMIT`) and the floor
+    /// in hand at its press.
+    fn drawn_room(&self) -> Option<DrawnRoom> {
+        match &self.drag {
+            Drag::Room(drag) => Some((drag.grid, drag.cells(), drag.floor.clone())),
+            _ => self.traced_room(),
         }
-        let plan = self.plan_room(grid, from, to);
+    }
+
+    /// The ghost of a room being drawn, for `overlay_quads`, as it would be built: its floor
+    /// and edge tiles faint over the map, and the cells of its edge left open in their own tile
+    /// (`under`), the wall's picture faint on each cell it would wall once the engine has sent
+    /// it, and a red mark on each cell whose wall it would take away (`over`). A room too large
+    /// to build shows its outline alone.
+    pub(super) fn room_overlay(&mut self, under: &mut Vec<f32>, over: &mut Vec<f32>) {
+        let Some((grid, Ok(cells), floor)) = self.drawn_room() else { return };
+        let plan = self.plan_room(grid, &cells);
         if let Some(floor) = floor {
             self.faint_tiles(grid, &plan.floor, &floor, under);
         }

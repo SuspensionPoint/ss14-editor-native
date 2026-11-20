@@ -1,4 +1,4 @@
-//! The lasso and the polygon of Paint and Erase: a shape traced on the map
+//! The lasso and the polygon of Paint, Erase and the Room tool: a shape traced on the map
 //! whose cells are the very cells Select's lasso and polygon take (`marquee::polygon_cells`),
 //! those whose middle is inside it, or the cells its corners are in when it is too small to
 //! hold a middle. It is traced on the grid under the press.
@@ -11,12 +11,13 @@
 //! Closed, a shape of Paint or Erase puts the brush of its first press down on its cells, or
 //! with Outline on its edge alone (`shapes::edge_cells`), as one edit through `put_shape`, so
 //! it skips and refuses as the other shapes do. A shape of more than `FILL_LIMIT` cells is
-//! refused whatever it puts down. While it is traced its outline is drawn as Select's is
-//! (`trace_path`), and the cells it would work on are filled (`trace_overlay`).
+//! refused whatever it puts down. A shape of the Room tool builds a room of its cells
+//! (`room.rs`). While it is traced its outline is drawn as Select's is (`trace_path`), and the
+//! cells it would work on are filled (`trace_overlay`), or for a room the room's ghost is drawn.
 
 use super::marquee::{closes_polygon, polygon_cells, TooMany, LASSO_STEP, MOST_POINTS};
 use super::shapes::edge_cells;
-use super::tiles::{Brush, FILL_LIMIT};
+use super::tiles::{Brush, FILL_LIMIT, SHAPE_LIMIT};
 use super::*;
 
 /// The fill of the cells a shape of Paint would put something down on.
@@ -55,7 +56,13 @@ pub(in crate::session) enum Purpose {
     /// Paint or Erase: puts the brush down on its cells, or on its edge alone with `outline`.
     /// None when nothing it can put down was chosen. It does nothing then.
     Brush { brush: Option<Brush>, outline: bool },
+    /// The Room tool: builds a room with this floor inside. None when no tile was in hand.
+    Room { floor: Option<String> },
 }
+
+/// A room being drawn: its grid, its cells (too many past `SHAPE_LIMIT`) and the floor in
+/// hand at its press.
+pub(super) type DrawnRoom = (i32, Result<Vec<(i32, i32)>, TooMany>, Option<String>);
 
 /// A shape being traced, as it is drawn now.
 struct Drawn<'a> {
@@ -100,6 +107,11 @@ impl Tracing {
     /// Drops the polygon being clicked out, and says whether there was one.
     pub(super) fn end(&mut self) -> bool {
         self.polygon.take().is_some()
+    }
+
+    /// Whether a polygon of the Room tool is being clicked out.
+    fn is_room(&self) -> bool {
+        matches!(self.polygon, Some(TracePolygon { purpose: Purpose::Room { .. }, .. }))
     }
 }
 
@@ -159,6 +171,16 @@ impl Session {
         true
     }
 
+    /// Drops a lasso or polygon of the Room tool, and says whether there was one.
+    pub(super) fn cancel_room_trace(&mut self) -> bool {
+        let dragged = matches!(self.drag, Drag::Trace(TraceDrag { purpose: Purpose::Room { .. }, .. }));
+        if dragged {
+            self.drag = Drag::None;
+        }
+        let clicked = self.tracing.is_room() && self.tracing.end();
+        dragged || clicked
+    }
+
     /// The cells of a grid whose middles are inside a shape traced on the map, or the cells
     /// its corners are in. None with no such grid.
     fn traced_cells(&self, grid: i32, points: &[(f32, f32)], limit: usize) -> Option<Result<Vec<(i32, i32)>, TooMany>> {
@@ -171,16 +193,22 @@ impl Session {
         Some(self.traced_cells(grid, points, FILL_LIMIT)?.map(|cells| if outline { edge_cells(&cells) } else { cells }))
     }
 
-    /// A traced shape was closed: Paint or Erase works on its cells as one edit.
+    /// A traced shape was closed: Paint or Erase works on its cells as one edit, and the Room
+    /// tool builds a room of them.
     fn finish_trace(&mut self, grid: i32, points: &[(f32, f32)], purpose: Purpose, trace: Trace) {
         match purpose {
-            Purpose::Brush { brush: None, .. } => {}
+            Purpose::Brush { brush: None, .. } | Purpose::Room { floor: None } => {}
             Purpose::Brush { brush: Some(brush), outline } => match self.brush_cells(grid, points, outline) {
                 Some(Ok(cells)) => self.put_shape(grid, &cells, &brush, trace.labels(), trace.name()),
                 Some(Err(TooMany)) => {
                     let not = if matches!(brush, Brush::Erase(_)) { "Not erased" } else { "Not painted" };
                     self.set_status(format!("{not}: the {} covers more than {} cells", trace.name(), thousands(FILL_LIMIT)));
                 }
+                None => {}
+            },
+            Purpose::Room { floor: Some(floor) } => match self.traced_cells(grid, points, SHAPE_LIMIT) {
+                Some(Ok(cells)) => self.build_room(grid, &cells, &floor, false),
+                Some(Err(TooMany)) => self.set_status(format!("Not built: the room has more than {} cells", thousands(SHAPE_LIMIT))),
                 None => {}
             },
         }
@@ -195,6 +223,13 @@ impl Session {
         let mut points = polygon.points.clone();
         points.extend(self.hover);
         Some(Drawn { grid: polygon.grid, points, purpose: &polygon.purpose, polygon: true })
+    }
+
+    /// The room being traced with the Room tool.
+    pub(super) fn traced_room(&self) -> Option<DrawnRoom> {
+        let Drawn { grid, points, purpose, .. } = self.drawn_trace()?;
+        let Purpose::Room { floor } = purpose else { return None };
+        Some((grid, self.traced_cells(grid, &points, SHAPE_LIMIT)?, floor.clone()))
     }
 
     /// The outline of the shape being traced, as Select's is drawn. A lasso is closed and a
@@ -232,6 +267,7 @@ impl Session {
         let Drawn { grid, points, purpose, .. } = self.drawn_trace()?;
         let (cells, limit) = match purpose {
             Purpose::Brush { outline, .. } => (self.brush_cells(grid, &points, *outline)?, FILL_LIMIT),
+            Purpose::Room { .. } => (self.traced_cells(grid, &points, SHAPE_LIMIT)?, SHAPE_LIMIT),
         };
         let (left, right, top) = points.iter().fold((f32::MAX, f32::MIN, f32::MIN), |(l, r, t), point| (l.min(point.0), r.max(point.0), t.max(point.1)));
         let text = match cells {

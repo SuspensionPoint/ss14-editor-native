@@ -28,7 +28,7 @@ pub struct Settings {
     /// The forks, by folder, whose maps show the Problems overlay. It is off for the others.
     pub problems_shown: Vec<String>,
     /// How each fork's walls are placed, by its folder: the tile laid under them, the Room
-    /// tool's wall and its Intersection switch.
+    /// tool's wall, its Intersection switch and its shape.
     pub placing: Vec<ForkPlacing>,
     /// Whether animated sprites move (View > Animate sprites). Off until a mapper turns it on.
     pub animate_sprites: bool,
@@ -52,6 +52,8 @@ pub struct ForkPlacing {
     /// Whether the Room tool joins a new room to the rooms it overlaps (its Intersection
     /// switch), in the place of keeping them separate.
     pub room_intersection: bool,
+    /// The shape the Room tool builds rooms in.
+    pub room_shape: crate::toolbox::RoomShape,
 }
 
 /// The tile laid under walls until a mapper picks another.
@@ -59,7 +61,7 @@ pub const PLATING: &str = "Plating";
 
 impl Default for ForkPlacing {
     fn default() -> Self {
-        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None, room_intersection: false }
+        ForkPlacing { fork: String::new(), floor_under_walls: true, floor_tile: PLATING.to_owned(), room_wall: None, room_intersection: false, room_shape: crate::toolbox::RoomShape::Rectangle }
     }
 }
 

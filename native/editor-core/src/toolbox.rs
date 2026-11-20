@@ -23,7 +23,8 @@
 //! just their edge (`ShapeFill`), read at the press.
 //!
 //! The shapes, Fill or Outline, the select tool's targets and shape, Select same's Contiguous,
-//! free placing and Erase's Only are kept in the settings file (`ToolOptions`).
+//! free placing and Erase's Only are kept in the settings file (`ToolOptions`). The Room tool's
+//! shape (`RoomShape`) is kept for each fork with its walls.
 
 use serde::{Deserialize, Serialize};
 
@@ -208,6 +209,35 @@ impl ShapeFill {
         match self {
             ShapeFill::Fill => "Fill",
             ShapeFill::Outline => "Outline",
+        }
+    }
+}
+
+/// The shape the Room tool builds a room in. The cells are those Select's shape of the same
+/// name takes, and a polygon is clicked out as Select's is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RoomShape {
+    /// A box dragged from corner to corner.
+    #[default]
+    Rectangle,
+    /// An ellipse inside the box dragged from corner to corner.
+    Ellipse,
+    /// A freehand line dragged around the room, closed when the button comes up.
+    Lasso,
+    /// Corners clicked one at a time, closed on the first corner, by a double-click or Enter.
+    Polygon,
+}
+
+impl RoomShape {
+    pub const ALL: [RoomShape; 4] = [RoomShape::Rectangle, RoomShape::Ellipse, RoomShape::Lasso, RoomShape::Polygon];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            RoomShape::Rectangle => "Rectangle",
+            RoomShape::Ellipse => "Ellipse",
+            RoomShape::Lasso => "Lasso",
+            RoomShape::Polygon => "Polygon",
         }
     }
 }

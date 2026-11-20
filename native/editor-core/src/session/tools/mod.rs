@@ -156,7 +156,8 @@
 //! presses, closed by a click on its first corner, a double-click or Enter (`enter_key`), and
 //! dropped by Escape, a secondary press and `set_tool`. Closed, it is one edit through
 //! `put_shape`, past `tiles::FILL_LIMIT` cells refused whatever it puts down. While drawn its
-//! outline comes through `marquee_path` and its cells are filled through `overlay_quads`.
+//! outline comes through `marquee_path` and its cells are filled through `overlay_quads`. The
+//! Room tool draws its lasso and polygon the same way and builds a room of their cells.
 //!
 //! **Rooms.** The Room tool drags out a rectangle as Rectangle does (`room.rs`). Let go, it is
 //! one edit with no stroke: the tile in hand inside, the tile laid under walls on the edge, and
@@ -405,7 +406,7 @@ pub const CONTROLS: &[(&str, &str)] = &[
     ("R", "Paint a rectangle: drag it out, up to 10,000 cells of entities or decals. With something to turn in hand, R turns it instead: a quarter clockwise for the selection, the entity Paint or Fill puts down in any shape, the region or the paste ghost, and the placement angle of a decal"),
     ("L", "Paint a line: drag it out, up to 10,000 cells of entities or decals"),
     ("C", "Paint a circle: drag out a filled circle from the cell you press to the cursor's cell, up to 10,000 cells of entities or decals"),
-    ("O", "Room: drag out a room, up to 10,000 cells. The tile in hand goes inside. Every edge cell gets the edge tile and a wall. Doors are up to you. Pick the wall in the options bar. Right-click or Escape cancels"),
+    ("O", "Room: draw a room as a rectangle, an ellipse, a lasso or a polygon, up to 10,000 cells. The tile in hand goes inside. Every edge cell gets the edge tile and a wall, and the walls close the room with no gap at a corner. Doors are up to you. Pick the shape and the wall in the options bar. A rectangle too thin for an inside builds a line of wall, and other shapes that thin are refused. Right-click or Escape cancels"),
     ("D", "Link: click a device that has links or a device list, then another device. For a list, the second device goes on the list. For links, a window shows the ports of both, the game's defaults first, with the links the two already have. Shift+click uses a device as a link source even when it also has a list. Right-click a listed device to take it off. Escape stops"),
     ("K", "Cables: drag a path of the chosen cable, one per cell, skipping cells that already have it. Right-drag removes that cable"),
     ("J", "Pipes: drag a path of the chosen pipe, each piece fitted to the cells it joins. Start or end on a pipe to join it. Right-drag removes pipes and refits the ones next to them"),
@@ -414,13 +415,13 @@ pub const CONTROLS: &[(&str, &str)] = &[
     ("Shift+click", "Paint on entities or decals: place where the cursor is, or on the cell when Free is on. Select: add to the selection, or take a selected one out. Pasting: stamp with the middle of the ghost's first cell on the cursor"),
     ("Shift+drag", "Select: move unanchored things exactly with the cursor, or drag a box that adds to the selection or the region. The Add mode in the options bar does the same"),
     ("Ctrl+click, Ctrl+drag", "Select: remove an entity, or a box of them, from the selection, or a box from the region. The Subtract mode in the options bar does the same"),
-    ("Right-click", "Select: clear the selection or close the wheel's list, or drop a polygon being drawn. On a region, open its menu, and off it, clear the region. Pasting: stop pasting. Paint and Erase: drop a polygon being drawn. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
+    ("Right-click", "Select: clear the selection or close the wheel's list, or drop a polygon being drawn. On a region, open its menu, and off it, clear the region. Pasting: stop pasting. Paint, Erase and Room: drop a polygon being drawn. Pick: close the list without picking. Cables and Pipes: remove along a drag"),
     ("Wheel", "Zoom. With Select and one entity selected, over it where others overlap, step through them. With Pick, where two or more things could be picked, step through them"),
     ("Middle drag, Space+drag", "Pan with any tool"),
     ("Arrow keys", "Select: move the selected entities and decals one cell along the grid's own axes, one undo step per press. With a region, move it one cell with its tiles, decals, air and everything on it. Hold to repeat"),
     ("Shift+Arrow keys", "Select: move one pixel (1/32 of a cell) when nothing selected is anchored. If anything is anchored, one cell"),
     ("Delete, Backspace", "Delete the selection. With a region, delete the region and everything on it"),
-    ("Enter", "Select, Paint and Erase: finish a polygon"),
+    ("Enter", "Select, Paint, Erase and Room: finish a polygon"),
     ("Escape", "Close the region's menu, or else drop a polygon being drawn, or else stop linking, or else stop pasting, or else clear the selection and the region, or close a dialog. In a side panel text field, only the field gets it"),
     ("Ctrl+C", "Copy the selected entities and what they hold. With a region, copy the region with its tiles, decals and everything on it"),
     ("Ctrl+X", "Cut: copy the selected entities, or the region, then delete them in one step"),
@@ -722,7 +723,7 @@ impl Session {
                 // Every other tool works on the document.
                 _ if self.doc.is_none() => {}
                 Tool::Paint => self.stroke_down(world),
-                Tool::Erase | Tool::Polygon if self.tracing.is_live() => self.trace_click(world, point, view),
+                Tool::Erase | Tool::Polygon | Tool::Room if self.tracing.is_live() => self.trace_click(world, point, view),
                 Tool::Erase => self.erase_down(world),
                 Tool::Pick => self.pick_down(world),
                 Tool::Fill => self.fill_down(world),

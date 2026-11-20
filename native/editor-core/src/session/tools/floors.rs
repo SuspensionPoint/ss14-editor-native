@@ -152,6 +152,21 @@ impl Session {
         }
     }
 
+    /// The shape the Room tool builds rooms in.
+    pub fn room_shape(&self) -> crate::toolbox::RoomShape {
+        self.flooring.placing.room_shape
+    }
+
+    /// Sets the shape the Room tool builds rooms in, and keeps it for the fork. A room being
+    /// drawn is dropped.
+    pub fn set_room_shape(&mut self, shape: crate::toolbox::RoomShape) {
+        self.cancel_room();
+        if self.flooring.placing.room_shape != shape {
+            self.flooring.placing.room_shape = shape;
+            self.save_flooring();
+        }
+    }
+
     /// The walls the Room tool can build with whose id or name has every one of the words in
     /// it, in either case, as indices into [`Self::prototypes`]. No words is all of them. The
     /// walls rooms are built from come first: WallSolid, WallReinforced, then the other walls
