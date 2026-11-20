@@ -452,7 +452,14 @@ public static partial class RegionCheck
         foreach (var (entity, x, y, _) in entities)
             ops.Add(new EditOp("move", Uid: entity.Uid, X: x, Y: y));
 
-        var decals = on.Decals.Select(decal => (decal, decal.X + dx, decal.Y + dy, decal.Angle)).ToList();
+        // As the editor sends them (area.rs decal_move_order): the chunks the move goes towards
+        // first, so they are left before the decals behind them come in, each in draw order.
+        var decals = on.Decals
+            .OrderBy(decal => -Math.Sign(dx) * ChunkOf(decal.X, decal.Y).X)
+            .ThenBy(decal => -Math.Sign(dy) * ChunkOf(decal.X, decal.Y).Y)
+            .ThenBy(decal => decal.Order)
+            .ThenBy(decal => decal.Id)
+            .Select(decal => (decal, decal.X + dx, decal.Y + dy, decal.Angle)).ToList();
         foreach (var (decal, x, y, angle) in decals)
             ops.Add(DecalOp(grid, decal, x, y, angle));
 

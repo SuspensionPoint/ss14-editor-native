@@ -126,7 +126,7 @@ fn standing<'a>(doc: &'a Doc, region: &Region) -> Vec<&'a Entity> {
 /// The ops that move a region by whole cells with what stands on it, from the mirror alone,
 /// in the order the engine check proved (`RegionCheck.cs`, `MovePlan`). First the tiles are
 /// written where they go, with their variant and turn. Then come the entities, then the
-/// decals whose corner is on the region, with every field resent. Last the cells left behind
+/// decals whose corner is on the region, with every field resent (in `decal_move_order`). Last the cells left behind
 /// are set to space. A cell that is left and gone to is written once and not cleared. A cell
 /// of the region with no tile writes nothing and clears nothing. After all that, the air the
 /// grid stores for each cell with a tile goes where the tile went (`air_ops`).
@@ -148,7 +148,7 @@ pub(in crate::session) fn move_ops(doc: &Doc, region: &Region, by: (i32, i32)) -
         ops.push(json!({ "kind": "move", "uid": entity.uid, "x": entity.x + dx, "y": entity.y + dy }));
     }
     let mut decals: Vec<_> = grid.decals.values().filter(|decal| on(region, decal.x, decal.y)).collect();
-    decals.sort_unstable_by_key(|decal| (decal.order, decal.id));
+    decals.sort_unstable_by_key(|decal| decal_move_order(decal, by));
     for decal in decals {
         ops.push(json!({
             "kind": "decal.update", "uid": decal.id, "grid": grid.uid, "x": decal.x + dx, "y": decal.y + dy,
@@ -164,6 +164,22 @@ pub(in crate::session) fn move_ops(doc: &Doc, region: &Region, by: (i32, i32)) -
     }
     ops.extend(air_ops(grid.uid, cells.iter().map(|&cell| (cell, (cell.0 + by.0, cell.1 + by.1)))));
     ops
+}
+
+/// The size of the chunks a fork that keeps its decals on chunk entities keeps them in, in
+/// cells each way (the game's ChunkEntitySystem.ChunkSize).
+const DECAL_CHUNK: f32 = 16.0;
+
+/// The order a region move sends its decals in. On a fork that keeps its decals on chunk
+/// entities, a decal that goes into another chunk takes the lowest id free there. So the decals
+/// of the chunks the move goes towards go first, and leave theirs before the decals behind
+/// them come in. A chunk the move fills anew then gives its decals the ids it gave before, and
+/// does not count up past those still there. Within a chunk they go in the order the game draws
+/// them, which their new chunk then keeps. A fork that keeps its decals on the grid keeps every
+/// decal's id whatever the order.
+fn decal_move_order(decal: &Decal, by: (i32, i32)) -> (i32, i32, i64, i32) {
+    let chunk = ((decal.x / DECAL_CHUNK).floor() as i32, (decal.y / DECAL_CHUNK).floor() as i32);
+    (-by.0.signum() * chunk.0, -by.1.signum() * chunk.1, decal.order, decal.id)
 }
 
 /// The ops that carry the air the grid stores for each cell to the cell its tile goes to. The
